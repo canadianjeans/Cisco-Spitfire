@@ -1,0 +1,328 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html><head><title>Python: module stc_gen</title>
+<meta charset="utf-8">
+</head><body bgcolor="#f0f0f8">
+
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="heading">
+<tr bgcolor="#7799ee">
+<td valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial">&nbsp;<br><big><big><strong>stc_gen</strong></big></big></font></td
+><td align=right valign=bottom
+><font color="#ffffff" face="helvetica, arial"><a href=".">index</a><br><a href="file:/Users/mjefferson/Projects/SET/Cisco - Spitfire/stc_gen/stc_gen.py">/Users/mjefferson/Projects/SET/Cisco - Spitfire/stc_gen/stc_gen.py</a></font></td></tr></table>
+    <p><tt>###############################################################################<br>
+#<br>
+#&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Spirent&nbsp;TestCenter&nbsp;Spitfire&nbsp;Traffic&nbsp;Generator&nbsp;Library<br>
+#&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;by&nbsp;Spirent&nbsp;Communications<br>
+#<br>
+#&nbsp;&nbsp;&nbsp;Date:&nbsp;November&nbsp;28,&nbsp;2017<br>
+#&nbsp;Author:&nbsp;Matthew&nbsp;Jefferson&nbsp;-&nbsp;matt.jefferson@spirent.com<br>
+#<br>
+#&nbsp;Description:&nbsp;This&nbsp;library&nbsp;provides&nbsp;the&nbsp;user&nbsp;with&nbsp;functions&nbsp;that&nbsp;converts<br>
+#&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;JSON-formatted&nbsp;input&nbsp;into&nbsp;Spirent&nbsp;TestCenter&nbsp;configuration.<br>
+#<br>
+#&nbsp;NOTE:<br>
+#&nbsp;&nbsp;&nbsp;To&nbsp;build&nbsp;the&nbsp;HTML&nbsp;documentation,&nbsp;use&nbsp;the&nbsp;command&nbsp;"pydoc&nbsp;-w&nbsp;stc_gen",&nbsp;executed<br>
+#&nbsp;&nbsp;&nbsp;in&nbsp;the&nbsp;same&nbsp;directory&nbsp;as&nbsp;the&nbsp;source&nbsp;code.<br>
+#<br>
+###############################################################################</tt></p>
+<p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#aa55cc">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Modules</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#aa55cc"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><table width="100%" summary="list"><tr><td width="25%" valign=top><a href="netaddr.compat.html">netaddr.compat</a><br>
+<a href="netaddr.contrib.html">netaddr.contrib</a><br>
+<a href="netaddr.core.html">netaddr.core</a><br>
+<a href="netaddr.eui.html">netaddr.eui</a><br>
+</td><td width="25%" valign=top><a href="getpass.html">getpass</a><br>
+<a href="netaddr.ip.html">netaddr.ip</a><br>
+<a href="json.html">json</a><br>
+<a href="os.html">os</a><br>
+</td><td width="25%" valign=top><a href="re.html">re</a><br>
+<a href="sqlite3.html">sqlite3</a><br>
+<a href="netaddr.strategy.html">netaddr.strategy</a><br>
+<a href="sys.html">sys</a><br>
+</td><td width="25%" valign=top><a href="time.html">time</a><br>
+</td></tr></table></td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#ee77aa">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Classes</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#ee77aa"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><dl>
+<dt><font face="helvetica, arial"><a href="stc_gen.html#StcGen">StcGen</a>
+</font></dt></dl>
+ <p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#ffc8d8">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#000000" face="helvetica, arial"><a name="StcGen">class <strong>StcGen</strong></a></font></td></tr>
+    
+<tr><td bgcolor="#ffc8d8"><tt>&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%">Methods defined here:<br>
+<dl><dt><a name="StcGen-__del__"><strong>__del__</strong></a>(self)</dt><dd><tt>#==============================================================================</tt></dd></dl>
+
+<dl><dt><a name="StcGen-__init__"><strong>__init__</strong></a>(self, userest<font color="#909090">=False</font>, labserverip<font color="#909090">=None</font>, username<font color="#909090">=None</font>, sessionname<font color="#909090">='StcGen'</font>, existingsession<font color="#909090">=''</font>, verbose<font color="#909090">=False</font>, terminateonexit<font color="#909090">=False</font>)</dt><dd><tt>Initializes&nbsp;the&nbsp;object&nbsp;and&nbsp;loads&nbsp;the&nbsp;Spirent&nbsp;TestCenter&nbsp;API&nbsp;(either&nbsp;the&nbsp;ReST&nbsp;or&nbsp;native&nbsp;version).<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+userest&nbsp;:&nbsp;bool<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Set&nbsp;to&nbsp;True&nbsp;to&nbsp;use&nbsp;the&nbsp;ReST&nbsp;API.<br>
+labserverip&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;IP&nbsp;address&nbsp;of&nbsp;the&nbsp;Lab&nbsp;Server.&nbsp;Required&nbsp;if&nbsp;using&nbsp;the&nbsp;ReST&nbsp;API.<br>
+username:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;username&nbsp;for&nbsp;the&nbsp;Lab&nbsp;Server&nbsp;session.&nbsp;Only&nbsp;applicable&nbsp;if&nbsp;using&nbsp;the&nbsp;Lab&nbsp;Server.&nbsp;Defaults&nbsp;to&nbsp;the&nbsp;current&nbsp;user.<br>
+sessionname:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;name&nbsp;of&nbsp;the&nbsp;Lab&nbsp;Server&nbsp;session.&nbsp;Only&nbsp;applicable&nbsp;if&nbsp;using&nbsp;the&nbsp;Lab&nbsp;Server.<br>
+existingsession:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;action&nbsp;to&nbsp;take&nbsp;if&nbsp;there&nbsp;is&nbsp;an&nbsp;existing&nbsp;session:&nbsp;join&nbsp;or&nbsp;kill.&nbsp;If&nbsp;not&nbsp;set,&nbsp;an&nbsp;exception&nbsp;will&nbsp;be&nbsp;raised&nbsp;if&nbsp;there<br>
+&nbsp;&nbsp;&nbsp;&nbsp;is&nbsp;an&nbsp;existing&nbsp;session.<br>
+verbose:&nbsp;bool<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Increasing&nbsp;the&nbsp;logging&nbsp;verbosity&nbsp;if&nbsp;set&nbsp;to&nbsp;True.<br>
+terminateonexit:&nbsp;bool<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Terminates&nbsp;the&nbsp;Lab&nbsp;Server&nbsp;session,&nbsp;if&nbsp;set&nbsp;to&nbsp;True,&nbsp;when&nbsp;cleaning&nbsp;up&nbsp;the&nbsp;object&nbsp;instance.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-connectAndApply"><strong>connectAndApply</strong></a>(self, revokeowner<font color="#909090">=False</font>)</dt><dd><tt>Connect&nbsp;to&nbsp;the&nbsp;IL&nbsp;(hardware),&nbsp;reserve&nbsp;ports&nbsp;and&nbsp;apply&nbsp;the&nbsp;configuration.<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+revokeowner&nbsp;:&nbsp;bool<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Set&nbsp;to&nbsp;True&nbsp;to&nbsp;revoke&nbsp;any&nbsp;existing&nbsp;reservations.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-createDevice"><strong>createDevice</strong></a>(self, port, name, parametersdict<font color="#909090">=''</font>)</dt><dd><tt>Create&nbsp;an&nbsp;Emulated&nbsp;Device&nbsp;object.<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+port&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;parent&nbsp;port&nbsp;object&nbsp;handle.<br>
+name:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;name&nbsp;of&nbsp;the&nbsp;device.<br>
+parametersdict&nbsp;:&nbsp;dict<br>
+&nbsp;&nbsp;&nbsp;&nbsp;A&nbsp;dictionary&nbsp;of&nbsp;attributes.&nbsp;<br>
+&nbsp;<br>
+Returns<br>
+-------<br>
+str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;device&nbsp;object&nbsp;handle.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-createModifier"><strong>createModifier</strong></a>(self, streamblock, modifiertype, parametersdict<font color="#909090">=''</font>)</dt><dd><tt>Create&nbsp;a&nbsp;StreamBlock&nbsp;modifier&nbsp;object.<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+streamblock&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;parent&nbsp;streamblock&nbsp;object&nbsp;handle.<br>
+modifiertype:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;type&nbsp;of&nbsp;modifier&nbsp;object:&nbsp;"RangeModifier",&nbsp;"RandomModifier"&nbsp;or&nbsp;"TableModifier".<br>
+parametersdict&nbsp;:&nbsp;dict<br>
+&nbsp;&nbsp;&nbsp;&nbsp;A&nbsp;dictionary&nbsp;of&nbsp;attributes.&nbsp;<br>
+&nbsp;<br>
+Returns<br>
+-------<br>
+str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;modifier&nbsp;object&nbsp;handle.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-createStreamBlock"><strong>createStreamBlock</strong></a>(self, port, name, headers<font color="#909090">=None</font>, parametersdict<font color="#909090">=None</font>)</dt><dd><tt>Create&nbsp;a&nbsp;StreamBlock&nbsp;object.<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+port&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;parent&nbsp;port&nbsp;object&nbsp;handle.<br>
+name:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;name&nbsp;of&nbsp;the&nbsp;streamblock.<br>
+headers:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;A&nbsp;space-delimited&nbsp;string&nbsp;of&nbsp;PDU&nbsp;types.&nbsp;Some&nbsp;valid&nbsp;values&nbsp;are:&nbsp;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;EthernetII,&nbsp;Vlan,&nbsp;IPv4,&nbsp;IPv6,&nbsp;Udp,&nbsp;Tcp&nbsp;and&nbsp;Custom.<br>
+parametersdict&nbsp;:&nbsp;dict<br>
+&nbsp;&nbsp;&nbsp;&nbsp;A&nbsp;dictionary&nbsp;of&nbsp;attributes.&nbsp;<br>
+&nbsp;<br>
+Returns<br>
+-------<br>
+str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;StreamBlock&nbsp;object&nbsp;handle.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-generateCsv"><strong>generateCsv</strong></a>(self, resultsdb, prefix<font color="#909090">=''</font>)</dt><dd><tt>Generate&nbsp;a&nbsp;plain-text&nbsp;CSV&nbsp;file&nbsp;from&nbsp;the&nbsp;specified&nbsp;results&nbsp;database.<br>
+&nbsp;<br>
+The&nbsp;CSV&nbsp;file&nbsp;will&nbsp;be&nbsp;generated&nbsp;in&nbsp;the&nbsp;same&nbsp;directory&nbsp;as&nbsp;the&nbsp;results&nbsp;database.<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+resultsdb&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;filename&nbsp;of&nbsp;the&nbsp;source&nbsp;results&nbsp;database.<br>
+prefix:&nbsp;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;An&nbsp;optional&nbsp;prefix&nbsp;to&nbsp;add&nbsp;to&nbsp;the&nbsp;CSV&nbsp;results&nbsp;filename.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-isTrafficRunning"><strong>isTrafficRunning</strong></a>(self)</dt><dd><tt>Determines&nbsp;is&nbsp;the&nbsp;generators&nbsp;are&nbsp;running&nbsp;on&nbsp;any&nbsp;of&nbsp;the&nbsp;defined&nbsp;ports.<br>
+&nbsp;<br>
+Returns<br>
+-------<br>
+bool<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Returns&nbsp;True&nbsp;if&nbsp;any&nbsp;generator&nbsp;is&nbsp;not&nbsp;STOPPED.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-loadJson"><strong>loadJson</strong></a>(self, inputfilename, deleteExistingConfig<font color="#909090">=True</font>)</dt><dd><tt>Parses&nbsp;the&nbsp;specifed&nbsp;JSON&nbsp;file&nbsp;and&nbsp;generates&nbsp;the&nbsp;corresponding&nbsp;Spirent&nbsp;TestCenter&nbsp;objects.<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+inputfilename&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;name&nbsp;of&nbsp;the&nbsp;JSON&nbsp;input&nbsp;configuration&nbsp;file.<br>
+deleteExistingConfig&nbsp;:&nbsp;bool<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Set&nbsp;to&nbsp;True&nbsp;to&nbsp;delete&nbsp;the&nbsp;existing&nbsp;project&nbsp;and&nbsp;create&nbsp;a&nbsp;new&nbsp;configuration.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-relocatePort"><strong>relocatePort</strong></a>(self, portname, location)</dt><dd><tt>Change&nbsp;the&nbsp;port's&nbsp;location&nbsp;attribute.<br>
+&nbsp;<br>
+This&nbsp;is&nbsp;used&nbsp;to&nbsp;remap&nbsp;the&nbsp;port&nbsp;locations.<br>
+NOTE:&nbsp;This&nbsp;must&nbsp;be&nbsp;performed&nbsp;BEFORE&nbsp;connecting&nbsp;to&nbsp;the&nbsp;hardware.<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+portname&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;name&nbsp;of&nbsp;the&nbsp;port&nbsp;to&nbsp;remap.<br>
+location:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;new&nbsp;location&nbsp;string&nbsp;for&nbsp;the&nbsp;port.&nbsp;These&nbsp;have&nbsp;the&nbsp;syntax&nbsp;&lt;chassisip&gt;/&lt;slot&gt;/&lt;port&gt;<br>
+&nbsp;<br>
+Returns<br>
+-------<br>
+str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;port&nbsp;object&nbsp;handle&nbsp;(if&nbsp;a&nbsp;matching&nbsp;port&nbsp;found).</tt></dd></dl>
+
+<dl><dt><a name="StcGen-resetConfig"><strong>resetConfig</strong></a>(self)</dt><dd><tt>Delete&nbsp;the&nbsp;existing&nbsp;project&nbsp;and&nbsp;return&nbsp;the&nbsp;configuration&nbsp;to&nbsp;the&nbsp;default&nbsp;state.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-resultsClear"><strong>resultsClear</strong></a>(self)</dt><dd><tt>Clears&nbsp;all&nbsp;statistics.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-runAllTests"><strong>runAllTests</strong></a>(self)</dt><dd><tt>Run&nbsp;all&nbsp;tests&nbsp;defined&nbsp;by&nbsp;the&nbsp;JSON&nbsp;configuration.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-runFixedDurationTest"><strong>runFixedDurationTest</strong></a>(self, testname, Duration<font color="#909090">=60</font>, DurationMode<font color="#909090">='SECONDS'</font>, LearningMode<font color="#909090">='L3'</font>, FrameLengths<font color="#909090">=None</font>, Loads<font color="#909090">=None</font>, LoadUnit<font color="#909090">='PERCENT_LINE_RATE'</font>, parametersdict<font color="#909090">=None</font>)</dt><dd><tt>Run&nbsp;a&nbsp;fixed&nbsp;duration&nbsp;test.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+testname&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;name&nbsp;of&nbsp;the&nbsp;test.&nbsp;This&nbsp;is&nbsp;only&nbsp;used&nbsp;for&nbsp;reporting&nbsp;purposes!<br>
+Duration:&nbsp;int<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;duration&nbsp;of&nbsp;the&nbsp;test.&nbsp;The&nbsp;DurationMode&nbsp;determines&nbsp;the&nbsp;units&nbsp;for&nbsp;this&nbsp;value.<br>
+DurationMode:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;One&nbsp;of&nbsp;these&nbsp;values:&nbsp;"SECONDS"&nbsp;or&nbsp;"BURSTS".<br>
+LearningMode:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;One&nbsp;of&nbsp;these&nbsp;values:&nbsp;"L2"&nbsp;or&nbsp;L3".<br>
+FrameLengths:&nbsp;List(int)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;A&nbsp;list&nbsp;of&nbsp;frame&nbsp;lengths&nbsp;to&nbsp;execute&nbsp;the&nbsp;test&nbsp;for.&nbsp;Set&nbsp;to&nbsp;"-1"<br>
+Loads:&nbsp;List(int)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;A&nbsp;list&nbsp;of&nbsp;loads&nbsp;to&nbsp;execute&nbsp;the&nbsp;test&nbsp;for.<br>
+LoadUnit:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;units&nbsp;for&nbsp;the&nbsp;load.&nbsp;One&nbsp;of&nbsp;these&nbsp;values:&nbsp;"PERCENT_LINE_RATE",&nbsp;"FRAMES_PER_SECOND",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;"INTER_BURST_GAP",&nbsp;"BITS_PER_SECOND",&nbsp;"KILOBITS_PER_SECOND",&nbsp;"MEGABITS_PER_SECOND"&nbsp;or&nbsp;"L2_RATE".<br>
+parametersdict&nbsp;:&nbsp;dict<br>
+&nbsp;&nbsp;&nbsp;&nbsp;A&nbsp;dictionary&nbsp;of&nbsp;test&nbsp;parameters.&nbsp;Users&nbsp;can&nbsp;use&nbsp;either&nbsp;the&nbsp;parametersdict&nbsp;or<br>
+&nbsp;&nbsp;&nbsp;&nbsp;keyword&nbsp;arguments.&nbsp;parameterdict&nbsp;settings&nbsp;take&nbsp;precedence&nbsp;over&nbsp;keyword&nbsp;arguments.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br>
+&nbsp;<br>
+Returns<br>
+-------<br>
+bool<br>
+&nbsp;&nbsp;&nbsp;&nbsp;True&nbsp;if&nbsp;the&nbsp;test&nbsp;ran&nbsp;successfully,&nbsp;False&nbsp;otherwise.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-runPingTest"><strong>runPingTest</strong></a>(self, testname, Count<font color="#909090">=1</font>, parametersdict<font color="#909090">=None</font>)</dt><dd><tt>Run&nbsp;a&nbsp;ping&nbsp;test.<br>
+&nbsp;<br>
+A&nbsp;ping&nbsp;is&nbsp;sent&nbsp;from&nbsp;each&nbsp;port&nbsp;to&nbsp;all&nbsp;of&nbsp;the&nbsp;gateway&nbsp;addresses&nbsp;defined&nbsp;for&nbsp;that&nbsp;port.<br>
+&nbsp;<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+testname&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;name&nbsp;of&nbsp;the&nbsp;test.&nbsp;This&nbsp;is&nbsp;only&nbsp;used&nbsp;for&nbsp;reporting&nbsp;purposes!<br>
+Count:&nbsp;int<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;number&nbsp;of&nbsp;pings&nbsp;to&nbsp;send&nbsp;to&nbsp;each&nbsp;gateway.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br>
+parametersdict&nbsp;:&nbsp;dict<br>
+&nbsp;&nbsp;&nbsp;&nbsp;A&nbsp;dictionary&nbsp;of&nbsp;test&nbsp;parameters.&nbsp;Users&nbsp;can&nbsp;use&nbsp;either&nbsp;the&nbsp;parametersdict&nbsp;or<br>
+&nbsp;&nbsp;&nbsp;&nbsp;keyword&nbsp;arguments.&nbsp;parameterdict&nbsp;settings&nbsp;take&nbsp;precedence&nbsp;over&nbsp;keyword&nbsp;arguments.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br>
+&nbsp;<br>
+Returns<br>
+-------<br>
+bool<br>
+&nbsp;&nbsp;&nbsp;&nbsp;True&nbsp;if&nbsp;the&nbsp;test&nbsp;ran&nbsp;successfully&nbsp;(all&nbsp;gateways&nbsp;responded),&nbsp;False&nbsp;otherwise.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-runTest"><strong>runTest</strong></a>(self, testname, testtype<font color="#909090">='FixedDuration'</font>, parametersdict<font color="#909090">=None</font>, **kwargs)</dt><dd><tt>Run&nbsp;the&nbsp;specified&nbsp;test&nbsp;type.<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+testname&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;name&nbsp;of&nbsp;the&nbsp;test.&nbsp;For&nbsp;reporting&nbsp;purposes&nbsp;only!<br>
+testtype:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;type&nbsp;of&nbsp;test&nbsp;to&nbsp;run.&nbsp;This&nbsp;argument&nbsp;is&nbsp;overridden&nbsp;by&nbsp;the&nbsp;"Type"&nbsp;setting<br>
+&nbsp;&nbsp;&nbsp;&nbsp;for&nbsp;the&nbsp;parameterdict.<br>
+parametersdict&nbsp;:&nbsp;dict<br>
+&nbsp;&nbsp;&nbsp;&nbsp;A&nbsp;dictionary&nbsp;of&nbsp;test&nbsp;parameters.&nbsp;Users&nbsp;can&nbsp;use&nbsp;either&nbsp;the&nbsp;parametersdict&nbsp;or<br>
+&nbsp;&nbsp;&nbsp;&nbsp;keyword&nbsp;arguments.&nbsp;parameterdict&nbsp;settings&nbsp;take&nbsp;precedence&nbsp;over&nbsp;keyword&nbsp;arguments.<br>
+**kwargs<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Arbitrary&nbsp;keyword&nbsp;arguments&nbsp;for&nbsp;the&nbsp;test.&nbsp;These&nbsp;are&nbsp;test&nbsp;type&nbsp;dependent&nbsp;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;and&nbsp;are&nbsp;overriden&nbsp;by&nbsp;parametersdict&nbsp;settings.<br>
+&nbsp;<br>
+Returns<br>
+-------<br>
+bool<br>
+&nbsp;&nbsp;&nbsp;&nbsp;True&nbsp;if&nbsp;the&nbsp;test&nbsp;ran&nbsp;successfully,&nbsp;False&nbsp;otherwise.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-saveResultsDb"><strong>saveResultsDb</strong></a>(self, filename, deletetemp<font color="#909090">=True</font>)</dt><dd><tt>Saves&nbsp;the&nbsp;results&nbsp;to&nbsp;a&nbsp;SQLite&nbsp;database&nbsp;<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+filename&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;filename&nbsp;of&nbsp;the&nbsp;database&nbsp;that&nbsp;will&nbsp;be&nbsp;saved.<br>
+deletetemp&nbsp;:&nbsp;bool<br>
+&nbsp;&nbsp;&nbsp;&nbsp;If&nbsp;True,&nbsp;delete&nbsp;the&nbsp;temporary&nbsp;directory&nbsp;used&nbsp;during&nbsp;file&nbsp;synchronization.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;This&nbsp;is&nbsp;only&nbsp;relevant&nbsp;when&nbsp;using&nbsp;a&nbsp;Lab&nbsp;Server.<br>
+&nbsp;<br>
+Returns<br>
+-------<br>
+str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;The&nbsp;fully&nbsp;normalized&nbsp;filename&nbsp;of&nbsp;the&nbsp;saved&nbsp;results&nbsp;database.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-trafficLearn"><strong>trafficLearn</strong></a>(self, learningmode)</dt><dd><tt>Start&nbsp;learning&nbsp;on&nbsp;all&nbsp;ports.<br>
+&nbsp;<br>
+Parameters<br>
+----------<br>
+learningmode&nbsp;:&nbsp;str<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Either&nbsp;"L2"&nbsp;or&nbsp;"L3".</tt></dd></dl>
+
+<dl><dt><a name="StcGen-trafficStart"><strong>trafficStart</strong></a>(self)</dt><dd><tt>Start&nbsp;the&nbsp;traffic&nbsp;generators&nbsp;on&nbsp;all&nbsp;ports.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-trafficStop"><strong>trafficStop</strong></a>(self)</dt><dd><tt>Stop&nbsp;the&nbsp;traffic&nbsp;generators&nbsp;on&nbsp;all&nbsp;ports.</tt></dd></dl>
+
+<dl><dt><a name="StcGen-trafficWaitUntilDone"><strong>trafficWaitUntilDone</strong></a>(self)</dt><dd><tt>Blocks&nbsp;execution&nbsp;until&nbsp;all&nbsp;generators&nbsp;have&nbsp;stopped&nbsp;sending&nbsp;frames.<br>
+&nbsp;<br>
+Raises<br>
+------<br>
+Exception<br>
+&nbsp;&nbsp;&nbsp;&nbsp;An&nbsp;exception&nbsp;is&nbsp;generated&nbsp;if&nbsp;the&nbsp;DurationMode&nbsp;is&nbsp;set&nbsp;to&nbsp;CONTINUOUS&nbsp;for<br>
+&nbsp;&nbsp;&nbsp;&nbsp;any&nbsp;port.</tt></dd></dl>
+
+</td></tr></table></td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#eeaa77">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Functions</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#eeaa77"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><dl><dt><a name="-main"><strong>main</strong></a>()</dt><dd><tt>###############################################################################<br>
+####<br>
+####&nbsp;&nbsp;&nbsp;&nbsp;Functions<br>
+####<br>
+###############################################################################</tt></dd></dl>
+</td></tr></table><p>
+<table width="100%" cellspacing=0 cellpadding=2 border=0 summary="section">
+<tr bgcolor="#55aa55">
+<td colspan=3 valign=bottom>&nbsp;<br>
+<font color="#ffffff" face="helvetica, arial"><big><strong>Data</strong></big></font></td></tr>
+    
+<tr><td bgcolor="#55aa55"><tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt></td><td>&nbsp;</td>
+<td width="100%"><strong>INET_PTON</strong> = 1<br>
+<strong>N</strong> = 4<br>
+<strong>NOHOST</strong> = 4<br>
+<strong>P</strong> = 1<br>
+<strong>STATUS</strong> = ''<br>
+<strong>VERSION</strong> = (0, 7, 19)<br>
+<strong>Z</strong> = 2<br>
+<strong>ZEROFILL</strong> = 2<br>
+<strong>print_function</strong> = _Feature((2, 6, 0, 'alpha', 2), (3, 0, 0, 'alpha', 0), 65536)</td></tr></table>
+</body></html>
