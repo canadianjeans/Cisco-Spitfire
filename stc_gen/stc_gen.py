@@ -9,6 +9,10 @@
 # Description: This library provides the user with functions that converts
 #              JSON-formatted input into Spirent TestCenter configuration.
 #
+# NOTE:
+#   To build the HTML documentation, use the command "pydoc -w stc_gen", executed
+#   in the same directory as the source code.
+#
 ###############################################################################
 
 ###############################################################################
@@ -57,13 +61,14 @@ import re
 import getpass
 import json
 import sqlite3
+
 from collections import defaultdict
 # netaddr is required for converting IP/MAC addresses.
 from netaddr import *
 
 
-print("DEBUG: Using pprint!!")
-import pprint
+#print("DEBUG: Using pprint!!")
+#import pprint
    
 ###############################################################################
 ####
@@ -78,8 +83,7 @@ class StcGen:
     #
     #==============================================================================
     def __init__(self, userest=False, labserverip=None, username=None, sessionname="StcGen", existingsession="", verbose=False, terminateonexit=False):
-        """
-        Initializes the object and loads the Spirent TestCenter API (either the ReST or native version).
+        """Initializes the object and loads the Spirent TestCenter API (either the ReST or native version).
 
         Parameters
         ----------
@@ -101,7 +105,8 @@ class StcGen:
 
         """
 
-        self.pp = pprint.PrettyPrinter(indent=2)
+        #print("DEBUG: Using PPRINT")
+        #self.pp = pprint.PrettyPrinter(indent=2)
 
         if not username:
             username = getpass.getuser()
@@ -156,8 +161,7 @@ class StcGen:
     #
     #==============================================================================
     def loadJson(self, inputfilename, deleteExistingConfig=True):
-        """
-        Parses the specifed JSON file and generates the corresponding Spirent TestCenter objects.
+        """Parses the specifed JSON file and generates the corresponding Spirent TestCenter objects.
 
         Parameters
         ----------
@@ -217,8 +221,7 @@ class StcGen:
 
     #==============================================================================
     def resetConfig(self):
-        """
-        Delete the existing project and return the configuration to the default state.
+        """Delete the existing project and return the configuration to the default state.
 
         """
 
@@ -226,37 +229,45 @@ class StcGen:
         self.stc.perform("ResetConfig", config="system1")        
         self.relations = {}
         self.objects = {}
+        self.testsdict = {}
+
         return
 
     #==============================================================================
     def runAllTests(self):
-        """
-        Run all tests defined by the JSON configuration.
+        """Run all tests defined by the JSON configuration.
         
         """
 
         self.connectAndApply()   
 
         # First, make sure none of the tests are "continuous"
-        for test in sorted(self.testsdict.keys()):
-            self.runTest(test, self.testsdict[test].copy())
+        for testname in sorted(self.testsdict.keys()):
+            #testtype = self.testsdict[testname].get("Type","FixedDuration")
+            self.runTest(testname, parametersdict=self.testsdict[testname].copy())
 
-        print("Disconnecting from hardware...")
+        # print("Disconnecting from hardware...")
         self.stc.perform("ChassisDisconnectAll")
 
         return     
 
     #==============================================================================
-    def runTest(self, testname, testdict): 
-        """
-        Run the specified test.
+    def runTest(self, testname, testtype="FixedDuration", parametersdict=None, **kwargs): 
+        """Run the specified test type.
         
         Parameters
         ----------
         testname : str
-            The name of the existing test to run.
-        testdict : dict
-            A dictionary of test parameters.        
+            The name of the test. For reporting purposes only!
+        testtype: str
+            The type of test to run. This argument is overridden by the "Type" setting
+            for the parameterdict.
+        parametersdict : dict
+            A dictionary of test parameters. Users can use either the parametersdict or
+            keyword arguments. parameterdict settings take precedence over keyword arguments.
+        **kwargs
+            Arbitrary keyword arguments for the test. These are test type dependent 
+            and are overriden by parametersdict settings.
         
         Returns
         -------
@@ -266,29 +277,52 @@ class StcGen:
         """           
 
         # Options are: Ping, FixedDuration. Consider adding RFC 2544 and 2889 (as well as others).
-        testtype = testdict.get("Type","FixedDuration")
+        if not parametersdict:
+            parametersdict = {}
+
+        testtype = str(parametersdict.get("Type", testtype))
 
         passed = False
         if testtype.lower() == "fixedduration":
-            passed = self.runFixedDurationTest(testname, testdict)
+            passed = self.runFixedDurationTest(testname, parametersdict=parametersdict, **kwargs)
         elif testtype.lower() == "ping":
-            passed = self.runPingTest(testname, testdict)
+            passed = self.runPingTest(testname, parametersdict=parametersdict, **kwargs)
         else:
             raise Exception("Unknown test type '" + testtype + "' for test '" + testname + "'.")
 
         return(passed)
 
     #==============================================================================
-    def runFixedDurationTest(self, testname, testdict): 
-        """
-        Run a fixed duration test.        
+    def runFixedDurationTest(self, testname, 
+                                   Duration       = 60,
+                                   DurationMode   = "SECONDS",
+                                   LearningMode   = "L3",
+                                   FrameLengths   = None,
+                                   Loads          = None,
+                                   LoadUnit       = "PERCENT_LINE_RATE",
+                                   parametersdict = None): 
+        """Run a fixed duration test.        
         
         Parameters
         ----------
         testname : str
-            The name of the existing test to run.
-        testdict : dict
-            A dictionary of test parameters.        
+            The name of the test. This is only used for reporting purposes!
+        Duration: int
+            The duration of the test. The DurationMode determines the units for this value.
+        DurationMode: str
+            One of these values: "SECONDS" or "BURSTS".
+        LearningMode: str
+            One of these values: "L2" or L3".
+        FrameLengths: List(int)
+            A list of frame lengths to execute the test for. Set to "-1"
+        Loads: List(int)
+            A list of loads to execute the test for.
+        LoadUnit: str
+            The units for the load. One of these values: "PERCENT_LINE_RATE", "FRAMES_PER_SECOND",
+            "INTER_BURST_GAP", "BITS_PER_SECOND", "KILOBITS_PER_SECOND", "MEGABITS_PER_SECOND" or "L2_RATE".
+        parametersdict : dict
+            A dictionary of test parameters. Users can use either the parametersdict or
+            keyword arguments. parameterdict settings take precedence over keyword arguments.      
         
         Returns
         -------
@@ -297,18 +331,18 @@ class StcGen:
 
         """ 
 
-        duration     = testdict.get("Duration",     60)
-        durationmode = testdict.get("DurationMode", "SECONDS")
-        learning     = testdict.get("LearningMode", "L3")  
-        # These are both lists. A value of -1 just means use the existing load.
-        framelengths = testdict.get("FrameLengths", -1)      
-        loads        = testdict.get("Loads",        -1)
-        loadunit     = testdict.get("LoadUnit",     "PERCENT_LINE_RATE")
+        # Override the keyword arguments with the parametersdict settings.
+        duration     = parametersdict.get("Duration",     Duration)
+        durationmode = parametersdict.get("DurationMode", DurationMode)
+        learning     = parametersdict.get("LearningMode", LearningMode)  
+        framelengths = parametersdict.get("FrameLengths", FrameLengths)      
+        loads        = parametersdict.get("Loads",        Loads)
+        loadunit     = parametersdict.get("LoadUnit",     LoadUnit)
         
-        resultsdbfilename = testdict.get("ResultsDbFileName", os.path.join("./results/", testname + ".db"))
+        resultsdbfilename = parametersdict.get("ResultsDbFileName", os.path.join("./results/", testname + ".db"))
 
-        if "DataMining" in testdict.keys():
-            self.__enableDataMining(testdict["DataMining"])
+        if "DataMining" in parametersdict.keys():
+            self.__enableDataMining(parametersdict["DataMining"])
 
         portlist = self.stc.get(self.project, "children-port").split()
 
@@ -325,10 +359,10 @@ class StcGen:
 
         self.stc.perform("DevicesStartAll")
 
-        # Make sure framelengths and loads are lists.
-        if framelengths == -1:
+        # If set to -1, use the configured load/framelength.
+        if not framelengths:
             framelengths = [-1]
-        if loads == -1:
+        if not loads:
             loads = [-1]
 
         passed = True
@@ -376,17 +410,39 @@ class StcGen:
                 time.sleep(1)
 
                 # Traffic has stopped. Gather results.
-                self.saveResultsDb(currentfilename)
-                self.generateCsv(currentfilename)
+                resultsfilename = self.saveResultsDb(currentfilename)
+
+                if resultsfilename:
+                    self.generateCsv(resultsfilename)
 
         return(passed)
 
     #==============================================================================
-    def runPingTest(self, testname, testdict):        
-        # Ping the gateway from all devices.
+    def runPingTest(self, testname, Count=1, parametersdict=None):        
+        """Run a ping test.
+
+        A ping is sent from each port to all of the gateway addresses defined for that port.
+
+        
+        Parameters
+        ----------
+        testname : str
+            The name of the test. This is only used for reporting purposes!
+        Count: int
+            The number of pings to send to each gateway.        
+        parametersdict : dict
+            A dictionary of test parameters. Users can use either the parametersdict or
+            keyword arguments. parameterdict settings take precedence over keyword arguments.      
+        
+        Returns
+        -------
+        bool
+            True if the test ran successfully (all gateways responded), False otherwise.
+
+        """                     
 
         # The number of pings per device.
-        count = testdict.get("Count", 1)
+        count = parametersdict.get("Count", Count)
 
         passed = True
 
@@ -417,7 +473,7 @@ class StcGen:
             for gateway in gateways[port].keys():
                 self.stc.perform("ResultsClearAll", PortList=port)
                 device = gateways[port][gateway]
-                print("DEBUG: Pinging " + port + " " + gateway + " " + device)                
+                #print("DEBUG: Pinging " + port + " " + gateway + " " + device)                
                 result = self.stc.perform("PingVerifyConnectivity", DeviceList=device, FrameCount=count)
                 if result["PassFailState"] == "FAILED":
                     passed = False
@@ -457,18 +513,31 @@ class StcGen:
         return(passed)
 
     #==============================================================================
-    def trafficStart(self): 
-        print("Starting generators...")
+    def trafficStart(self):
+        """Start the traffic generators on all ports.
+        """
+        # print("Starting generators...")
         self.stc.perform("GeneratorStart")
+
         return  
 
     #==============================================================================
     def trafficStop(self):
+        """Stop the traffic generators on all ports.
+        """        
         self.stc.perform("GeneratorStop")
         return   
 
     #==============================================================================
     def trafficLearn(self, learningmode):
+        """Start learning on all ports.
+
+        Parameters
+        ----------
+        learningmode : str
+            Either "L2" or "L3".        
+
+        """
         if learningmode.upper() == "L2":
             self.stc.perform("ArpNdStartOnAllDevices")
             self.stc.perform("L2LearningStart")
@@ -480,6 +549,16 @@ class StcGen:
 
     #==============================================================================
     def trafficWaitUntilDone(self):
+        """Blocks execution until all generators have stopped sending frames.
+
+        Raises
+        ------
+        Exception
+            An exception is generated if the DurationMode is set to CONTINUOUS for
+            any port.
+
+        """
+
         # NOTE: This method will raise an exception if there are any ports where
         #       the DurationMode is set to CONTINUOUS.
         for port in self.stc.get(self.project, "children-port").split():
@@ -488,17 +567,45 @@ class StcGen:
 
         while self.isTrafficRunning():
             print("Test is running...")
-            time.sleep(1)        
+            time.sleep(1)    
+
         return
 
     #==============================================================================
     def resultsClear(self):
+        """Clears all statistics.        
+        """
         self.stc.perform("ResultsClearAll")
         return         
 
     #==============================================================================
-    def createStreamBlock(self, port, name, dictconfig=""):
-        if "Headers" in dictconfig.keys():
+    def createStreamBlock(self, port, name, headers=None, parametersdict=None):
+        """Create a StreamBlock object.
+
+        Parameters
+        ----------
+        port : str
+            The parent port object handle.
+        name: str
+            The name of the streamblock.
+        headers: str
+            A space-delimited string of PDU types. Some valid values are: 
+            EthernetII, Vlan, IPv4, IPv6, Udp, Tcp and Custom.
+        parametersdict : dict
+            A dictionary of attributes. 
+        
+        Returns
+        -------
+        str
+            The StreamBlock object handle.
+
+        """
+        if not parametersdict:
+            # This may seem a bit odd, but we don't want to initialize the parametersdict this way in the function header. 
+            parametersdict = {}
+
+        frameconfig = ""
+        if parametersdict and "Headers" in parametersdict.keys():
             # Valid header options are (NOTE: These are case sensitive!!!):
             #   EthernetII
             #   IPv4 
@@ -506,31 +613,49 @@ class StcGen:
             #   Udp
             #   Tcp
             #   Custom
-            frameconfig = dictconfig["Headers"]
-            del dictconfig["Headers"]
-        else:
-            frameconfig = ""
+            frameconfig = parametersdict["Headers"]
+            del parametersdict["Headers"]
+        elif headers:
+            frameconfig = headers
 
         streamblock = self.stc.create("StreamBlock", under=port, FrameConfig=frameconfig, Name=name)
         self.stc.perform("StreamBlockUpdate", StreamBlock=streamblock)
 
-        self.__addObject(dictconfig, streamblock)
+        self.__addObject(parametersdict, streamblock)
 
         return streamblock 
 
     #==============================================================================
-    def createDevice(self, port, name, dictconfig=""):
-        if "Encapsulation" in dictconfig.keys():
+    def createDevice(self, port, name, parametersdict=""):
+        """Create an Emulated Device object.
+
+        Parameters
+        ----------
+        port : str
+            The parent port object handle.
+        name: str
+            The name of the device.
+        parametersdict : dict
+            A dictionary of attributes. 
+        
+        Returns
+        -------
+        str
+            The device object handle.
+
+        """ 
+
+        if "Encapsulation" in parametersdict.keys():
             # Valid Encapsulations are: IPv4, IPv6 and IPv4v6.
 
-            encapsulation = dictconfig["Encapsulation"]
-            del dictconfig["Encapsulation"]
+            encapsulation = parametersdict["Encapsulation"]
+            del parametersdict["Encapsulation"]
         else:
             encapsulation = "IPv4"
 
-        if "VlanCount" in dictconfig.keys():
-            vlancount = dictconfig["VlanCount"]
-            del dictconfig["VlanCount"]
+        if "VlanCount" in parametersdict.keys():
+            vlancount = parametersdict["VlanCount"]
+            del parametersdict["VlanCount"]
         else:
             vlancount = 0      
 
@@ -563,19 +688,37 @@ class StcGen:
         result = self.stc.perform("DeviceGenConfigExpand", DeleteExisting="No", GenParams=edp)
         device = result["ReturnList"]
 
-        self.__addObject(dictconfig, device)
+        self.__addObject(parametersdict, device)
 
         return device
 
     #==============================================================================
-    def createModifier(self, streamblock, modifiertype, dictconfig=""): 
+    def createModifier(self, streamblock, modifiertype, parametersdict=""): 
+        """Create a StreamBlock modifier object.
+
+        Parameters
+        ----------
+        streamblock : str
+            The parent streamblock object handle.
+        modifiertype: str
+            The type of modifier object: "RangeModifier", "RandomModifier" or "TableModifier".
+        parametersdict : dict
+            A dictionary of attributes. 
+        
+        Returns
+        -------
+        str
+            The modifier object handle.
+
+        """ 
+
         # Modifiers are very "picky".
         # The modifier object's attributes are case sensitive, you the user
         # must enter the correct field, or the modifier will not work.
 
-        if "Field" in dictconfig.keys():
-            field = dictconfig["Field"]
-            del dictconfig["Field"]
+        if "Field" in parametersdict.keys():
+            field = parametersdict["Field"]
+            del parametersdict["Field"]
         else:
             raise Exception("You must specify the field attribute for a modifier.")
 
@@ -601,12 +744,21 @@ class StcGen:
 
         #self.pp.pprint(self.stc.get(modifier))
 
-        self.__addObject(dictconfig, modifier)
+        self.__addObject(parametersdict, modifier)
 
         return modifier
 
     #==============================================================================
-    def connectAndApply(self, revokeowner=False): 
+    def connectAndApply(self, revokeowner=False):
+        """Connect to the IL (hardware), reserve ports and apply the configuration.
+
+        Parameters
+        ----------
+        revokeowner : bool
+            Set to True to revoke any existing reservations.
+        
+        """
+
         offlineports = []
         for port in self.stc.get(self.project, "children-port").split():
             online = self.stc.get(port, "Online")
@@ -622,6 +774,25 @@ class StcGen:
 
     #==============================================================================
     def relocatePort(self, portname, location): 
+        """Change the port's location attribute.
+
+        This is used to remap the port locations.
+        NOTE: This must be performed BEFORE connecting to the hardware.
+
+        Parameters
+        ----------
+        portname : str
+            The name of the port to remap.
+        location: str
+            The new location string for the port. These have the syntax <chassisip>/<slot>/<port>
+        
+        Returns
+        -------
+        str
+            The port object handle (if a matching port found).
+
+        """
+
         # Find the specified port. This needs to be called BEFORE connecting to the
         # hardware.
         found = False
@@ -639,6 +810,15 @@ class StcGen:
 
     #==============================================================================
     def isTrafficRunning(self): 
+        """Determines is the generators are running on any of the defined ports.
+        
+        Returns
+        -------
+        bool
+            Returns True if any generator is not STOPPED.
+
+        """
+
         running = False
         for port in self.stc.get(self.project, "children-port").split():
             if self.stc.get(port + ".generator", "State") != "STOPPED":
@@ -647,7 +827,24 @@ class StcGen:
         return running 
 
     #==============================================================================
-    def saveResultsDb(self, filename): 
+    def saveResultsDb(self, filename, deletetemp=True): 
+        """Saves the results to a SQLite database 
+
+        Parameters
+        ----------
+        filename : str
+            The filename of the database that will be saved.
+        deletetemp : bool
+            If True, delete the temporary directory used during file synchronization.
+            This is only relevant when using a Lab Server.
+       
+        Returns
+        -------
+        str
+            The fully normalized filename of the saved results database.
+
+        """
+
         filename = os.path.abspath(filename)
 
         if self.labserverip:
@@ -660,12 +857,18 @@ class StcGen:
             # command, the results DB files will be in a predictable location.
             self.stc.config("system1.project", ConfigurationFileName="stcgen_results")
 
+        # Save the database to disk.
         self.stc.perform("SaveResult", CollectResult="TRUE",
                                        SaveDetailedResults="TRUE",
                                        DatabaseConnectionString=filename,
                                        OverwriteIfExist="TRUE")   
 
         if self.labserverip:
+            # If we are using a Lab Server, we need to do a little dance to get the files
+            # from there to the desired location on the local client.
+            # First, copy all of the files from the Lab Server, and then copy the specific
+            # database file to the desired target location.
+            # Delete the temporary directory afterward.
             
             # Do the following in a temporary directory. This will allow us to clean
             # up all of the extra files (logs and stuff) when we are done.
@@ -673,6 +876,11 @@ class StcGen:
             temppath = ".stcgen_results_temp"
 
             try:
+                # Determine the sourcefilename BEFORE changing directories. It looks like 
+                # there is some weirdness with the os.path.abspath() function.
+                sourcefilename = os.path.join(temppath, "stcgen_results", filename)                
+                sourcefilename = os.path.abspath(sourcefilename)
+
                 if not os.path.exists(temppath):
                     os.makedirs(temppath)
 
@@ -684,34 +892,55 @@ class StcGen:
                 # Now move the DB file from the temporary directory and put it into 
                 # the specified directory (path).
                 if not os.path.exists(path):
-                    os.makedirs(path)
+                    os.makedirs(path)                
 
-                sourcefilename = os.path.join("stcgen_results", filename)
                 targetfilename = os.path.join(path, filename)
-                # print("Looking for " + sourcefilename)
-                # print("Going to " + targetfilename)
+
                 if os.path.isfile(sourcefilename):
                     # This is the move function.
                     os.rename(sourcefilename, targetfilename)
+
+                    filename = targetfilename
+
                 else:
-                    print("WARNING: Unable to locate the results DB file '" + filename + "'.")                
-                    filename = None
-            except:
+                    # Something went wrong. Spare the temporary results directory for debugging.
+                    raise Exception("Unable to locate the results DB file '" + filename + "' (" + sourcefilename + ").")                
+
+            except Exception as ex:                
+                filename = None
                 print("WARNING: Something went wrong while downloading the results DB.")
+                print(ex)
                 pass
 
             os.chdir(originalpath)
 
+            if deletetemp:
+                # Delete the temporary results directory.                        
+                self.__rmtree(temppath)
+
         return filename
 
     #==============================================================================
-    def generateCsv(self, resultsdb, prefix=""):        
+    def generateCsv(self, resultsdb, prefix=""):
+        """Generate a plain-text CSV file from the specified results database.
+
+        The CSV file will be generated in the same directory as the results database.
+
+        Parameters
+        ----------
+        resultsdb : str
+            The filename of the source results database.
+        prefix: 
+            An optional prefix to add to the CSV results filename.
+
+        """
+
         # Create some CSV files in the same directory as the results DB.
         path = os.path.dirname(resultsdb)
 
         result = self.__getResultsDictFromDb(resultsdb)  
 
-        self.pp.pprint(result)
+        #self.pp.pprint(result)
         for streamid in result.keys():
             for rxport in result[streamid].keys():        
                 # Generate a new file for each rxport.
@@ -749,8 +978,14 @@ class StcGen:
 
         # Open and read the JSON input file.
         jsondict = {}
-        with open(inputfilename) as json_file:
-            jsondict = json.load(json_file)
+
+        try:
+            with open(inputfilename) as json_file:
+                jsondict = json.load(json_file)
+        except:
+            print("Unexpected error while parsing the JSON:", sys.exc_info()[1])
+            print()
+            raise
 
         return jsondict
 
@@ -775,7 +1010,7 @@ class StcGen:
                 del objectattributes["ObjectType"]
 
                 if objecttype.lower() == "streamblock":
-                    object = self.createStreamBlock(parent, key, objectattributes)
+                    object = self.createStreamBlock(port=parent, name=key, parametersdict=objectattributes)
                 if objecttype.lower() == "emulateddevice" or objecttype.lower() == "device" or objecttype.lower() == "router":
                     object = self.createDevice(parent, key, objectattributes)                    
                 elif re.search("modifier", objecttype, flags=re.I):
@@ -966,6 +1201,7 @@ class StcGen:
             resultdict["foundmatch"] = True
         else:
             # Search the children.
+            # NOTE: This can be computationally expensive (it's recursive).
             resultdict["foundmatch"] = False
             for child in self.stc.get(object, "children").split():
                 resultdict = self.__findAttribute(child, attribute, _topmost=False)
@@ -1586,6 +1822,28 @@ class StcGen:
 
         return resultdict
 
+    #==============================================================================
+    def __rmtree(self, path):
+        """Delete the specified file or directory. This works for nested,
+           subdirectories and they do NOT need to be empty.
+        """
+
+        if os.path.isfile(path):
+            os.remove(path)
+        else:
+            for the_file in os.listdir(path):
+                file_path = os.path.join(path, the_file)
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                    elif os.path.isdir(file_path): 
+                        self.__rmtree(file_path)
+                except Exception as e:
+                    print(e)
+
+            os.rmdir(path)
+        return        
+    
 ###############################################################################
 ####
 ####    Functions
