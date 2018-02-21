@@ -57,6 +57,7 @@ from __future__ import print_function
 import sys
 import os
 import time
+import datetime
 import re
 import getpass
 import json
@@ -236,20 +237,27 @@ class StcGen:
     #==============================================================================
     def runAllTests(self):
         """Run all tests defined by the JSON configuration.
+
+        Returns
+        -------
+        dict
+            Returns a dictionary containing test status, statistics and results database filename information.         
         
         """
 
         self.connectAndApply()   
 
+        results = {}
+
         # First, make sure none of the tests are "continuous"
         for testname in sorted(self.testsdict.keys()):
             #testtype = self.testsdict[testname].get("Type","FixedDuration")
-            self.runTest(testname, parametersdict=self.testsdict[testname].copy())
+            results[testname] = self.runTest(testname, parametersdict=self.testsdict[testname].copy())
 
         # print("Disconnecting from hardware...")
         self.stc.perform("ChassisDisconnectAll")
 
-        return     
+        return(results)
 
     #==============================================================================
     def runTest(self, testname, testtype="FixedDuration", parametersdict=None, **kwargs): 
@@ -271,8 +279,8 @@ class StcGen:
         
         Returns
         -------
-        bool
-            True if the test ran successfully, False otherwise.
+        dict
+            Returns a dictionary containing test status, statistics and results database filename information. 
 
         """           
 
@@ -282,15 +290,15 @@ class StcGen:
 
         testtype = str(parametersdict.get("Type", testtype))
 
-        passed = False
+        results = {}
         if testtype.lower() == "fixedduration":
-            passed = self.runFixedDurationTest(testname, parametersdict=parametersdict, **kwargs)
+            results = self.runFixedDurationTest(testname, parametersdict=parametersdict, **kwargs)
         elif testtype.lower() == "ping":
-            passed = self.runPingTest(testname, parametersdict=parametersdict, **kwargs)
+            results = self.runPingTest(testname, parametersdict=parametersdict, **kwargs)
         else:
             raise Exception("Unknown test type '" + testtype + "' for test '" + testname + "'.")
 
-        return(passed)
+        return(results)
 
     #==============================================================================
     def runFixedDurationTest(self, testname, 
@@ -326,8 +334,8 @@ class StcGen:
         
         Returns
         -------
-        bool
-            True if the test ran successfully, False otherwise.
+        dict
+            Returns a dictionary containing test status, statistics and results database filename information.
 
         """ 
 
@@ -338,8 +346,18 @@ class StcGen:
         framelengths = parametersdict.get("FrameLengths", FrameLengths)      
         loads        = parametersdict.get("Loads",        Loads)
         loadunit     = parametersdict.get("LoadUnit",     LoadUnit)
-        
-        resultsdbfilename = parametersdict.get("ResultsDbFileName", os.path.join("./results/", testname + ".db"))
+
+        # Create a timestamp for the result databases.
+        now = datetime.datetime.now()
+        timestamp = now.strftime("%Y-%m-%d-%H-%M-%S")
+                
+        resultsdbfilename = parametersdict.get("ResultsDbFileName", os.path.join("./results/", testname + "_" + timestamp + ".db"))
+
+        results = {}
+        results["TestType"] = "FixedDuration"
+        results["Iterations"] = {}
+        #results["ResultsDataBases"] = []
+        results["Status"] = "FAILED"
 
         if "DataMining" in parametersdict.keys():
             self.__enableDataMining(parametersdict["DataMining"])
@@ -365,7 +383,7 @@ class StcGen:
         if not loads:
             loads = [-1]
 
-        passed = True
+        iteration = 1
         for framelength in framelengths:
             for load in loads:
                 currentfilename = resultsdbfilename
@@ -407,15 +425,33 @@ class StcGen:
                 self.trafficWaitUntilDone()
 
                 # Give the frames a little time to clear the DUT.
-                time.sleep(1)
+                time.sleep(1)                
 
                 # Traffic has stopped. Gather results.
                 resultsfilename = self.saveResultsDb(currentfilename)
+                #resultsfilename = self.saveResultsDb(currentfilename, deletetemp=False)
+
+                results["Iterations"][iteration] = {}
+                results["Iterations"][iteration]["Load"] = load
+                results["Iterations"][iteration]["LoadUnit"] = loadunit
+                results["Iterations"][iteration]["FrameLength"] = framelength
+                results["Iterations"][iteration]["Database"] = resultsfilename
+                results["Iterations"][iteration]["FlowStats"] = {}
+                results["Iterations"][iteration]["StreamStats"] = {}
+                results["Iterations"][iteration]["StreamBlockStats"] = {}
 
                 if resultsfilename:
-                    self.generateCsv(resultsfilename)
+                    results["Iterations"][iteration]["FlowStats"] = self.getResultsDictFromDb(resultsfilename, mode="FLOW")
+                    results["Iterations"][iteration]["StreamStats"] = self.getResultsDictFromDb(resultsfilename, mode="STREAM")
+                    results["Iterations"][iteration]["StreamBlockStats"] = self.getResultsDictFromDb(resultsfilename, mode="STREAMBLOCK")
 
-        return(passed)
+                    #self.generateCsv(resultsfilename)
+                
+                iteration += 1
+
+        results["Status"] = "PASSED"
+
+        return(results)
 
     #==============================================================================
     def runPingTest(self, testname, Count=1, parametersdict=None):        
@@ -436,15 +472,16 @@ class StcGen:
         
         Returns
         -------
-        bool
-            True if the test ran successfully (all gateways responded), False otherwise.
+        dict
+            Returns a dictionary containing test status, statistics and results database filename information.
 
         """                     
 
         # The number of pings per device.
         count = parametersdict.get("Count", Count)
 
-        passed = True
+        results = {}
+        results["Status"] = "FAILED"
 
         # Compile a list of unique gateways for each port. We only consider EmulatedDevices for this test.
         devices = self.stc.get("system1.project", "children-emulateddevice").split()
@@ -509,8 +546,11 @@ class StcGen:
         #         port = self.stc.get(device, "AffiliationPort-Targets")
         #         self.pp.pprint(self.stc.get(port + ".PingReport"))
         #         print()
+
+        if passed:
+            results["Status"] = "PASSED"
                     
-        return(passed)
+        return(results)
 
     #==============================================================================
     def trafficStart(self):
@@ -560,7 +600,7 @@ class StcGen:
         """
 
         # NOTE: This method will raise an exception if there are any ports where
-        #       the DurationMode is set to CONTINUOUS.
+        #       the DurationMode is set to CONTINUOUS.        
         for port in self.stc.get(self.project, "children-port").split():
             if self.stc.get(port + ".generator.generatorconfig", "DurationMode").upper() == "CONTINUOUS":
                 raise Exception("The DurationMode for port '" + self.stc.get(port, "Name") + "' is set to CONTINUOUS.")
@@ -820,11 +860,12 @@ class StcGen:
         """
 
         running = False
-        for port in self.stc.get(self.project, "children-port").split():
+        for port in self.stc.get(self.project, "children-port").split():            
             if self.stc.get(port + ".generator", "State") != "STOPPED":
                 running = True
                 break
-        return running 
+
+        return(running)
 
     #==============================================================================
     def saveResultsDb(self, filename, deletetemp=True): 
@@ -921,362 +962,25 @@ class StcGen:
         return filename
 
     #==============================================================================
-    def generateCsv(self, resultsdb, prefix=""):
-        """Generate a plain-text CSV file from the specified results database.
-
-        The CSV file will be generated in the same directory as the results database.
-
+    def getResultsDictFromDb(self, resultsdatabase, mode="FLOW", datasetid=""):
+        """Generates a result view from the specified Spirent TestCenter End-of-Test results (sqlite) database.
+        
         Parameters
         ----------
-        resultsdb : str
-            The filename of the source results database.
-        prefix: 
-            An optional prefix to add to the CSV results filename.
+        resultsdatabase : str
+            The filename of the Sqlite EoT results database.
+        mode : str
+            The level of aggregation for results: FLOW, STREAM or STREAMBLOCK.
+        datasetid : int
+            Specifies which results dataset to process. Defaults to the latest data.
+            This is not normally used.
+        
+        Returns
+        -------
+        dict
+            A dictionary that contains results.
 
         """
-
-        # Create some CSV files in the same directory as the results DB.
-        path = os.path.dirname(resultsdb)
-
-        result = self.__getResultsDictFromDb(resultsdb)  
-
-        #self.pp.pprint(result)
-        for streamid in result.keys():
-            for rxport in result[streamid].keys():        
-                # Generate a new file for each rxport.
-
-                if rxport != "N/A":
-
-                    # Start with the header:
-                    noheader = 1
-                    header   = ""
-                    body     = ""
-                    for key in result[streamid][rxport].keys():            
-                        if type(result[streamid][rxport][key]) is defaultdict:                
-                            for label in sorted(result[streamid][rxport][key].keys()):
-                                if noheader:
-                                    header += str(label) + ", "
-                                body += str(result[streamid][rxport][key][label]) + ", "
-                                #print("    " + label + "=" + str(result[streamid][rxport][key][label]))
-                            body += "\n"
-                            noheader = 0
-
-                    filename = str(prefix) + str(rxport) + ".csv"                    
-                    fh = open(os.path.join(path, filename), 'w')
-                    fh.write(header)
-                    fh.write("\n")
-                    fh.write(body)
-                    fh.close()  # you can omit in most cases as the destructor will call it
-        return            
-
-    #==============================================================================
-    #
-    #   Private Methods
-    #
-    #==============================================================================
-    def __convertJsonToDict(self, inputfilename):        
-
-        # Open and read the JSON input file.
-        jsondict = {}
-
-        try:
-            with open(inputfilename) as json_file:
-                jsondict = json.load(json_file)
-        except:
-            print("Unexpected error while parsing the JSON:", sys.exc_info()[1])
-            print()
-            raise
-
-        return jsondict
-
-    #==============================================================================
-    def __addObject(self, objectdict, parent=None):   
-        # This is a recursive method for parsing the JSON/Dictionary configuration
-        # and translating it into Spirent TestCenter objects.
-
-        if not parent:
-            parent = self.project
-
-        # Iterate through each key.
-        for key in sorted(objectdict.keys()):
-            # A new object will contain a dictionary for the "value", and that
-            # dictionary will have the "ObjectType" key defined.
-            objecttype = self.__getObjectType(key, objectdict[key])
-
-            if objecttype:                     
-                # We found a new object. Make a copy of the objectdict and delete the "ObjectType" key.
-                # If we don't make a copy of the dict, the for loop that we are in may fail.
-                objectattributes = objectdict[key].copy()
-                del objectattributes["ObjectType"]
-
-                if objecttype.lower() == "streamblock":
-                    object = self.createStreamBlock(port=parent, name=key, parametersdict=objectattributes)
-                if objecttype.lower() == "emulateddevice" or objecttype.lower() == "device" or objecttype.lower() == "router":
-                    object = self.createDevice(parent, key, objectattributes)                    
-                elif re.search("modifier", objecttype, flags=re.I):
-                    object = self.createModifier(parent, objecttype, objectattributes)
-                else:
-
-                    if re.search("routerconfig$", objecttype, flags=re.I) or re.search("hostconfig$", objecttype, flags=re.I) or re.search("blockconfig$", objecttype, flags=re.I):
-                        # Some protocols require some addition modifications to the existing protocol stack.                        
-                        # The ProtocolCreate command will handle that for us.
-                        primaryif = self.stc.get(parent, "primaryif")
-                        result = self.stc.perform("ProtocolCreateCommand", CreateClassId=objecttype, ParentList=parent, UsesIfList=primaryif)
-                        object = result['ReturnList']    
-
-                    else:
-
-                        object = ""
-
-                        # There is no need to create Dot1xEap***Config objects. They are created automatically
-                        # when the Dot1xSupplicantBlockConfig (parent) attribute "EapAuthMethod" is configured.
-                        if re.search("Dot1xEap.+Config$", objecttype, flags=re.I):
-                            # Set the EapAuthMethod, which will create the object for us, and then search for the desired object.
-                            # Note that the user may ALSO set this attribute, however, it is not guarenteed to have
-                            # been processed before this point, so we need to manually figure it out.
-
-                            # Find the EapAuthMethod Type.
-                            match = re.search("Dot1xEap(.+)Config", objecttype, flags=re.I)
-                            # This is assuming that there is always a match. It shouldn't fail.
-                            eapauthmethod = match.group(1)  
-
-                            # This will ensure that the correct object is created.
-                            self.stc.config(parent, EapAuthMethod=eapauthmethod)
-
-                            # Just find the matching object type.
-                            for child in self.stc.get(parent, "children").split():
-                                if re.search(objecttype, child, flags=re.I):                                    
-                                    object = child
-                                    break
-
-                        if not object:
-                            object = self.stc.create(objecttype, under=parent, name=key)
-
-                    if objecttype.lower() == "bgpipv4routeconfig" or objecttype.lower() == "bgpipv6routeconfig":
-                        # Add a sane default for the AS path.
-                        router = self.stc.get(object, "parent")
-                        asnum = self.stc.get(router, "AsNum")
-                        self.stc.config(object, AsPath=asnum)                        
-
-                    self.__addObject(objectattributes, object)
-                # Keep track of all objects that are created. We need these for when
-                # we resolve "relations" later on.
-                if key in self.objects.keys():
-                    print("WARNING: Duplicate object name. The object '" + self.objects[key] + "' already has the name '" + key + "'.")
-                else:
-                    self.objects[key] = object
-            else:               
-
-                attribute = key
-
-                # Some keys may need to be modified.
-                attribute = self.__modifyPDUKey(key)
-
-                # Handle to ToS and DiffServ keys separately.
-                if re.search("\.tos|\.diffserv", attribute, flags=re.I):
-                    self.__setIPv4Tos(parent, attribute, objectdict[key])
-                else:
-
-                    if re.search("Relation:", attribute, flags=re.I):
-                        # This attribute makes reference to an object.
-                        # We must delay setting this value until later to avoid a race condition.
-                        if parent not in self.relations.keys():
-                            self.relations[parent] = {}
-
-                        self.relations[parent][key] = objectdict[key]
-                    else:
-                        self.__config(parent, attribute, objectdict[key])
-
-        return 
-
-    #==============================================================================
-    def __getObjectType(self, key, value):
-        # Returns True if the specified key is referencing an object.
-        # Key is referencing an object if "value" is a dictionary, and the field
-        # "ObjectType" exists.
-        if type(value) is dict and "ObjectType" in value.keys():
-            return value["ObjectType"]
-        else:
-            return None
-
-    #==============================================================================
-    def __resolveRelations(self):
-        # If an attribute has the keyword "Relation:", it means the value of the 
-        # attribute references an object's name (or list of object names).
-        # This method processes all of the references found during the configuration process.
-
-        for object in self.relations.keys():
-            for attribute in self.relations[object].keys():
-                value = self.relations[object][attribute]
-
-                # Make sure value is a list.
-                if not isinstance(value, list):
-                    # Convert this string to a list.
-                    value = [value]
-                
-                # Remove the "Relation:" tag from the attribute.
-                attribute = re.sub("Relation:", "", attribute, flags=re.I)
-       
-                # value can be either a string or a list.
-                objectlist = []
-                for objectname in value:    
-
-                    if objectname not in self.objects.keys():                            
-                        raise Exception("An error occurred while processing '" + attribute + "' = " + str(objectname) + "\nUnable to locate the object.")
-                    else:                        
-                        objectlist.append(self.objects[objectname])
-                       
-                # We should have a list of objects now.
-                if len(objectlist) > 0:
-                    self.__config(object, attribute, " ".join(objectlist))
-
-        # Reset the relations dictionary.
-        self.relations = {}
-        return              
-
-    #==============================================================================
-    def __config(self, object, attribute, value):
-        # This is a replacement for the built-in Spirent TestCenter config command.
-        # I've designed it this way to speed up execution. The "expensive" __findAttributes
-        # method is only used if the attribute can't be found.
-            
-        try:            
-            # See if the build-in config function works.
-            args = {attribute: value}
-            self.stc.config(object, **args)
-            #print(object + "." + attribute + " = " + str(value))
-        except Exception as ex:
-            # Some error occurred. It may have been that the attribute wasn't found for the current
-            # object. Check the descendant objects to see if one of them has the attribute.
-            resultdict = self.__findAttribute(object, attribute)
-
-            if not resultdict["foundmatch"]:
-                # Nope...something went wrong.                
-                #raise Exception("An error occurred while processing '" + attribute + "' = " + str(value) + "\n" + str(ex.args[2]))
-                raise Exception("An error occurred while processing '" + attribute + "' = " + str(value))
-
-            # We can either use the DDN or the actual object. I'm just going with the DDN.
-            object = resultdict["ddn"]
-            attribute = resultdict["attribute"]
-            args = {attribute: value}
-            self.stc.config(object, **args)
-            #print(object + "." + attribute + " = " + str(value))
-
-        return
-    #==============================================================================
-    def __findAttribute(self, object, attribute, _topmost=True):
-        # This recursive method will search the specified object, and all of its children,
-        # for the specified attribute. The first match is always returned.
-        # Returns a dictionary containing information on the match.
-        # The original object and attribute are returned if no match is found.
-        #
-        # e.g.
-        #   self.__findAttribute("port1", "SchedulingMode")        
-        #
-        # Returns:
-        #   object     - The handle of the object where the matching attribute was found.
-        #   attribute  - The exact attribute that was found. The case matches what the API uses.
-        #   value      - The attribute's value.
-        #   ddn        - The DDN path to the object.
-        #   foundmatch - Boolean
-
-        resultdict = {}
-
-        # First, check the current object for a match:
-        attributelist = self.stc.get(object).keys()
-
-        matchingattribute = next((x for x in attributelist if x.lower() == attribute.lower()), None)       
-        if matchingattribute:
-            # Found the matching attribute.
-            
-            resultdict["object"] = object
-            resultdict["attribute"] = matchingattribute
-            resultdict["value"] = self.stc.get(object, matchingattribute)
-            
-            if _topmost:
-                resultdict["ddn"] = object
-            else:
-                resultdict["ddn"] = self.stc.perform("GetObjectInfo", object=object)["ObjectType"]
-
-            resultdict["foundmatch"] = True
-        else:
-            # Search the children.
-            # NOTE: This can be computationally expensive (it's recursive).
-            resultdict["foundmatch"] = False
-            for child in self.stc.get(object, "children").split():
-                resultdict = self.__findAttribute(child, attribute, _topmost=False)
-
-                if resultdict["foundmatch"]:
-                    # Prepend this object to the DDN path.
-                    if _topmost:
-                        resultdict["ddn"] = object + "." + resultdict["ddn"]
-                    else:
-                        objecttype = self.stc.perform("GetObjectInfo", object=object)["ObjectType"]
-                        resultdict["ddn"] = objecttype + "." + resultdict["ddn"]
-                    break
-
-        if not resultdict["foundmatch"]:                   
-            # Just return the original attribute and object.
-            resultdict["object"] = object
-            resultdict["ddn"] = object
-            resultdict["attribute"] = attribute
-            resultdict["value"] = None
-
-        return resultdict      
-
-    #==============================================================================
-    def __modifyPDUKey(self, attribute): 
-        # Any keys relating to PDU headers need to be modified to the strings expected by the API.
-        # I could let the user simply use the native strings, however, they are different from
-        # what they pass to the "Header" key, and that could be confusing to the user.
-        attribute = re.sub("EthernetII\.", "ethernet:EthernetII.",            attribute, flags=re.I)
-        attribute = re.sub("Vlan\.",       "ethernet:EthernetII.vlans.vlan.", attribute, flags=re.I)                        
-        attribute = re.sub("IPv4\.",       "ipv4:IPv4.",                      attribute, flags=re.I)                        
-        attribute = re.sub("IPv6\.",       "ipv6:IPv6.",                      attribute, flags=re.I)                        
-        attribute = re.sub("UDP\.",        "udp:Udp.",                        attribute, flags=re.I)                        
-        attribute = re.sub("TCP\.",        "tcp:Tcp.",                        attribute, flags=re.I)
-        attribute = re.sub("Custom\.",     "custom:Custom.",                  attribute, flags=re.I) 
-        return attribute
-
-    #==============================================================================
-    def __setIPv4Tos(self, streamblock, attribute, hexstring): 
-        # Spirent TestCenter API doesn't allow the user to set the IPv4 ToS/Diffserv as
-        # a single byte. This method does.
-        object = streamblock + ".ipv4:IPv4.tosdiffserv.tos"
-        value = int(hexstring, 16)
-        self.stc.config(object, precedence=(value & 0xE0) >> 5,
-                                dBit=(value & 0x10) >> 4,
-                                tBit=(value & 0x08) >> 3,
-                                rBit=(value & 0x04) >> 2,
-                                mBit=(value & 0x02) >> 1,
-                                reserved=(value & 0x01))
-        return
-
-    #==============================================================================
-    def __enableDataMining(self, dataminingdict): 
-
-        fieldlist = []
-        for key in dataminingdict:
-            fieldlist.append(dataminingdict[key])
-
-        self.stc.config("system1.project.ResultOptions", SaveAtEotProperties=" ".join(fieldlist))
-
-        return     
-
-    #==============================================================================
-    def __getResultsDictFromDb(self, resultsdatabase, mode="FLOW", datasetid=""):
-    
-        # Description: Generates a result view from the specified Spirent TestCenter 
-        #              End-of-Test results (sqlite) database. 
-        #              Returns a Python dict.
-        #
-        #  Parameters:
-        #    resultsdatabase - The filename of the Sqlite EoT results database.
-        #    mode            - (Optional) The level of aggregation for results: FLOW, STREAM or STREAMBLOCK.
-        #    datasetid       - (Optional) Specifies which results dataset to process. 
-        #                                 Defaults to the latest data. This is not normally used.
-        #
-        #  Returns: A dictionary that contains results.
         
         conn = sqlite3.connect(resultsdatabase)
         db = conn.cursor()
@@ -1639,7 +1343,350 @@ class StcGen:
         # We are done with the database.
         conn.close()
 
-        return(resultsdict)
+        return(resultsdict)        
+
+    #==============================================================================
+    def generateCsv(self, resultsdb, prefix=""):
+        """Generate a plain-text CSV file from the specified results database.
+
+        The CSV file will be generated in the same directory as the results database.
+
+        Parameters
+        ----------
+        resultsdb : str
+            The filename of the source results database.
+        prefix: 
+            An optional prefix to add to the CSV results filename.
+
+        """
+
+        # Create some CSV files in the same directory as the results DB.
+        path = os.path.dirname(resultsdb)
+
+        result = self.getResultsDictFromDb(resultsdb)  
+
+        #self.pp.pprint(result)
+        for streamid in result.keys():
+            for rxport in result[streamid].keys():        
+                # Generate a new file for each rxport.
+
+                if rxport != "N/A":
+
+                    # Start with the header:
+                    noheader = 1
+                    header   = ""
+                    body     = ""
+                    for key in result[streamid][rxport].keys():            
+                        if type(result[streamid][rxport][key]) is defaultdict:                
+                            for label in sorted(result[streamid][rxport][key].keys()):
+                                if noheader:
+                                    header += str(label) + ", "
+                                body += str(result[streamid][rxport][key][label]) + ", "
+                                #print("    " + label + "=" + str(result[streamid][rxport][key][label]))
+                            body += "\n"
+                            noheader = 0
+
+                    filename = str(prefix) + str(rxport) + ".csv"                    
+                    fh = open(os.path.join(path, filename), 'w')
+                    fh.write(header)
+                    fh.write("\n")
+                    fh.write(body)
+                    fh.close()  # you can omit in most cases as the destructor will call it
+        return            
+
+    #==============================================================================
+    #
+    #   Private Methods
+    #
+    #==============================================================================
+    def __convertJsonToDict(self, inputfilename):        
+
+        # Open and read the JSON input file.
+        jsondict = {}
+
+        try:
+            with open(inputfilename) as json_file:
+                jsondict = json.load(json_file)
+        except:
+            print("Unexpected error while parsing the JSON:", sys.exc_info()[1])
+            print()
+            raise
+
+        return jsondict
+
+    #==============================================================================
+    def __addObject(self, objectdict, parent=None):   
+        # This is a recursive method for parsing the JSON/Dictionary configuration
+        # and translating it into Spirent TestCenter objects.
+
+        if not parent:
+            parent = self.project
+
+        # Iterate through each key.
+        for key in sorted(objectdict.keys()):
+            # A new object will contain a dictionary for the "value", and that
+            # dictionary will have the "ObjectType" key defined.
+            objecttype = self.__getObjectType(key, objectdict[key])
+
+            if objecttype:                     
+                # We found a new object. Make a copy of the objectdict and delete the "ObjectType" key.
+                # If we don't make a copy of the dict, the for loop that we are in may fail.
+                objectattributes = objectdict[key].copy()
+                del objectattributes["ObjectType"]
+
+                if objecttype.lower() == "streamblock":
+                    object = self.createStreamBlock(port=parent, name=key, parametersdict=objectattributes)
+                if objecttype.lower() == "emulateddevice" or objecttype.lower() == "device" or objecttype.lower() == "router":
+                    object = self.createDevice(parent, key, objectattributes)                    
+                elif re.search("modifier", objecttype, flags=re.I):
+                    object = self.createModifier(parent, objecttype, objectattributes)
+                else:
+
+                    if re.search("routerconfig$", objecttype, flags=re.I) or re.search("hostconfig$", objecttype, flags=re.I) or re.search("blockconfig$", objecttype, flags=re.I):
+                        # Some protocols require some addition modifications to the existing protocol stack.                        
+                        # The ProtocolCreate command will handle that for us.
+                        primaryif = self.stc.get(parent, "primaryif")
+                        result = self.stc.perform("ProtocolCreateCommand", CreateClassId=objecttype, ParentList=parent, UsesIfList=primaryif)
+                        object = result['ReturnList']    
+
+                    else:
+
+                        object = ""
+
+                        # There is no need to create Dot1xEap***Config objects. They are created automatically
+                        # when the Dot1xSupplicantBlockConfig (parent) attribute "EapAuthMethod" is configured.
+                        if re.search("Dot1xEap.+Config$", objecttype, flags=re.I):
+                            # Set the EapAuthMethod, which will create the object for us, and then search for the desired object.
+                            # Note that the user may ALSO set this attribute, however, it is not guarenteed to have
+                            # been processed before this point, so we need to manually figure it out.
+
+                            # Find the EapAuthMethod Type.
+                            match = re.search("Dot1xEap(.+)Config", objecttype, flags=re.I)
+                            # This is assuming that there is always a match. It shouldn't fail.
+                            eapauthmethod = match.group(1)  
+
+                            # This will ensure that the correct object is created.
+                            self.stc.config(parent, EapAuthMethod=eapauthmethod)
+
+                            # Just find the matching object type.
+                            for child in self.stc.get(parent, "children").split():
+                                if re.search(objecttype, child, flags=re.I):                                    
+                                    object = child
+                                    break
+
+                        if not object:
+                            object = self.stc.create(objecttype, under=parent, name=key)
+
+                    if objecttype.lower() == "bgpipv4routeconfig" or objecttype.lower() == "bgpipv6routeconfig":
+                        # Add a sane default for the AS path.
+                        router = self.stc.get(object, "parent")
+                        asnum = self.stc.get(router, "AsNum")
+                        self.stc.config(object, AsPath=asnum)                        
+
+                    self.__addObject(objectattributes, object)
+                # Keep track of all objects that are created. We need these for when
+                # we resolve "relations" later on.
+                if key in self.objects.keys():
+                    print("WARNING: Duplicate object name. The object '" + self.objects[key] + "' already has the name '" + key + "'.")
+                else:
+                    self.objects[key] = object
+            else:               
+
+                attribute = key
+
+                # Some keys may need to be modified.
+                attribute = self.__modifyPDUKey(key)
+
+                # Handle to ToS and DiffServ keys separately.
+                if re.search("\.tos|\.diffserv", attribute, flags=re.I):
+                    self.__setIPv4Tos(parent, attribute, objectdict[key])
+                else:
+
+                    if re.search("Relation:", attribute, flags=re.I):
+                        # This attribute makes reference to an object.
+                        # We must delay setting this value until later to avoid a race condition.
+                        if parent not in self.relations.keys():
+                            self.relations[parent] = {}
+
+                        self.relations[parent][key] = objectdict[key]
+                    else:
+                        self.__config(parent, attribute, objectdict[key])
+
+        return 
+
+    #==============================================================================
+    def __getObjectType(self, key, value):
+        # Returns True if the specified key is referencing an object.
+        # Key is referencing an object if "value" is a dictionary, and the field
+        # "ObjectType" exists.
+        if type(value) is dict and "ObjectType" in value.keys():
+            return value["ObjectType"]
+        else:
+            return None
+
+    #==============================================================================
+    def __resolveRelations(self):
+        # If an attribute has the keyword "Relation:", it means the value of the 
+        # attribute references an object's name (or list of object names).
+        # This method processes all of the references found during the configuration process.
+
+        for object in self.relations.keys():
+            for attribute in self.relations[object].keys():
+                value = self.relations[object][attribute]
+
+                # Make sure value is a list.
+                if not isinstance(value, list):
+                    # Convert this string to a list.
+                    value = [value]
+                
+                # Remove the "Relation:" tag from the attribute.
+                attribute = re.sub("Relation:", "", attribute, flags=re.I)
+       
+                # value can be either a string or a list.
+                objectlist = []
+                for objectname in value:    
+
+                    if objectname not in self.objects.keys():                            
+                        raise Exception("An error occurred while processing '" + attribute + "' = " + str(objectname) + "\nUnable to locate the object.")
+                    else:                        
+                        objectlist.append(self.objects[objectname])
+                       
+                # We should have a list of objects now.
+                if len(objectlist) > 0:
+                    self.__config(object, attribute, " ".join(objectlist))
+
+        # Reset the relations dictionary.
+        self.relations = {}
+        return              
+
+    #==============================================================================
+    def __config(self, object, attribute, value):
+        # This is a replacement for the built-in Spirent TestCenter config command.
+        # I've designed it this way to speed up execution. The "expensive" __findAttributes
+        # method is only used if the attribute can't be found.
+            
+        try:            
+            # See if the build-in config function works.
+            args = {attribute: value}
+            self.stc.config(object, **args)
+            #print(object + "." + attribute + " = " + str(value))
+        except Exception as ex:
+            # Some error occurred. It may have been that the attribute wasn't found for the current
+            # object. Check the descendant objects to see if one of them has the attribute.
+            resultdict = self.__findAttribute(object, attribute)
+
+            if not resultdict["foundmatch"]:
+                # Nope...something went wrong.                
+                #raise Exception("An error occurred while processing '" + attribute + "' = " + str(value) + "\n" + str(ex.args[2]))
+                raise Exception("An error occurred while processing '" + attribute + "' = " + str(value))
+
+            # We can either use the DDN or the actual object. I'm just going with the DDN.
+            object = resultdict["ddn"]
+            attribute = resultdict["attribute"]
+            args = {attribute: value}
+            self.stc.config(object, **args)
+            #print(object + "." + attribute + " = " + str(value))
+
+        return
+    #==============================================================================
+    def __findAttribute(self, object, attribute, _topmost=True):
+        # This recursive method will search the specified object, and all of its children,
+        # for the specified attribute. The first match is always returned.
+        # Returns a dictionary containing information on the match.
+        # The original object and attribute are returned if no match is found.
+        #
+        # e.g.
+        #   self.__findAttribute("port1", "SchedulingMode")        
+        #
+        # Returns:
+        #   object     - The handle of the object where the matching attribute was found.
+        #   attribute  - The exact attribute that was found. The case matches what the API uses.
+        #   value      - The attribute's value.
+        #   ddn        - The DDN path to the object.
+        #   foundmatch - Boolean
+
+        resultdict = {}
+
+        # First, check the current object for a match:
+        attributelist = self.stc.get(object).keys()
+
+        matchingattribute = next((x for x in attributelist if x.lower() == attribute.lower()), None)       
+        if matchingattribute:
+            # Found the matching attribute.
+            
+            resultdict["object"] = object
+            resultdict["attribute"] = matchingattribute
+            resultdict["value"] = self.stc.get(object, matchingattribute)
+            
+            if _topmost:
+                resultdict["ddn"] = object
+            else:
+                resultdict["ddn"] = self.stc.perform("GetObjectInfo", object=object)["ObjectType"]
+
+            resultdict["foundmatch"] = True
+        else:
+            # Search the children.
+            # NOTE: This can be computationally expensive (it's recursive).
+            resultdict["foundmatch"] = False
+            for child in self.stc.get(object, "children").split():
+                resultdict = self.__findAttribute(child, attribute, _topmost=False)
+
+                if resultdict["foundmatch"]:
+                    # Prepend this object to the DDN path.
+                    if _topmost:
+                        resultdict["ddn"] = object + "." + resultdict["ddn"]
+                    else:
+                        objecttype = self.stc.perform("GetObjectInfo", object=object)["ObjectType"]
+                        resultdict["ddn"] = objecttype + "." + resultdict["ddn"]
+                    break
+
+        if not resultdict["foundmatch"]:                   
+            # Just return the original attribute and object.
+            resultdict["object"] = object
+            resultdict["ddn"] = object
+            resultdict["attribute"] = attribute
+            resultdict["value"] = None
+
+        return resultdict      
+
+    #==============================================================================
+    def __modifyPDUKey(self, attribute): 
+        # Any keys relating to PDU headers need to be modified to the strings expected by the API.
+        # I could let the user simply use the native strings, however, they are different from
+        # what they pass to the "Header" key, and that could be confusing to the user.
+        attribute = re.sub("EthernetII\.", "ethernet:EthernetII.",            attribute, flags=re.I)
+        attribute = re.sub("Vlan\.",       "ethernet:EthernetII.vlans.vlan.", attribute, flags=re.I)                        
+        attribute = re.sub("IPv4\.",       "ipv4:IPv4.",                      attribute, flags=re.I)                        
+        attribute = re.sub("IPv6\.",       "ipv6:IPv6.",                      attribute, flags=re.I)                        
+        attribute = re.sub("UDP\.",        "udp:Udp.",                        attribute, flags=re.I)                        
+        attribute = re.sub("TCP\.",        "tcp:Tcp.",                        attribute, flags=re.I)
+        attribute = re.sub("Custom\.",     "custom:Custom.",                  attribute, flags=re.I) 
+        return attribute
+
+    #==============================================================================
+    def __setIPv4Tos(self, streamblock, attribute, hexstring): 
+        # Spirent TestCenter API doesn't allow the user to set the IPv4 ToS/Diffserv as
+        # a single byte. This method does.
+        object = streamblock + ".ipv4:IPv4.tosdiffserv.tos"
+        value = int(hexstring, 16)
+        self.stc.config(object, precedence=(value & 0xE0) >> 5,
+                                dBit=(value & 0x10) >> 4,
+                                tBit=(value & 0x08) >> 3,
+                                rBit=(value & 0x04) >> 2,
+                                mBit=(value & 0x02) >> 1,
+                                reserved=(value & 0x01))
+        return
+
+    #==============================================================================
+    def __enableDataMining(self, dataminingdict): 
+
+        fieldlist = []
+        for key in dataminingdict:
+            fieldlist.append(dataminingdict[key])
+
+        self.stc.config("system1.project.ResultOptions", SaveAtEotProperties=" ".join(fieldlist))
+
+        return     
 
     #==============================================================================
     def __addRxEotStreamCustomResultsTable(self, db, datasetid):    
