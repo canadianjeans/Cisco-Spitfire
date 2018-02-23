@@ -308,7 +308,7 @@ class StcGen:
                                    FrameLengths   = None,
                                    Loads          = None,
                                    LoadUnit       = "PERCENT_LINE_RATE",
-                                   ResultsMode    = "STREAMS",
+                                   ResultModes    = ['ALL'],
                                    parametersdict = None): 
         """Run a fixed duration test.        
         
@@ -329,8 +329,8 @@ class StcGen:
         LoadUnit: str
             The units for the load. One of these values: "PERCENT_LINE_RATE", "FRAMES_PER_SECOND",
             "INTER_BURST_GAP", "BITS_PER_SECOND", "KILOBITS_PER_SECOND", "MEGABITS_PER_SECOND" or "L2_RATE".
-        ResultsMode: str
-            The results that will be returned after the test: "ALL", "FLOW", "STREAM" or "STREAMBLOCK".
+        ResultModes: List(str)
+            A list of result types that will be returned after the test: "ALL", "FLOW", "STREAM", "STREAMBLOCK", "PORT"
         parametersdict : dict
             A dictionary of test parameters. Users can use either the parametersdict or
             keyword arguments. parameterdict settings take precedence over keyword arguments.      
@@ -349,7 +349,7 @@ class StcGen:
         framelengths = parametersdict.get("FrameLengths", FrameLengths)      
         loads        = parametersdict.get("Loads",        Loads)
         loadunit     = parametersdict.get("LoadUnit",     LoadUnit)
-        resultsmode  = parametersdict.get("ResultsMode",  ResultsMode)
+        resultmodes  = parametersdict.get("ResultModes",  ResultModes)
 
         # Create a timestamp for the result databases.
         now = datetime.datetime.now()
@@ -449,20 +449,26 @@ class StcGen:
                 else:
                     results["Iterations"][iteration]["FrameLength"] = "N/A"
 
-                results["Iterations"][iteration]["Database"] = resultsfilename
-                results["Iterations"][iteration]["FlowStats"] = {}
-                results["Iterations"][iteration]["StreamStats"] = {}
+                results["Iterations"][iteration]["Database"]         = resultsfilename
+                results["Iterations"][iteration]["FlowStats"]        = {}
+                results["Iterations"][iteration]["StreamStats"]      = {}
                 results["Iterations"][iteration]["StreamBlockStats"] = {}
+                results["Iterations"][iteration]["PortStats"]        = {}
 
                 if resultsfilename:
-                    if resultsmode.upper() == "FLOW" or resultsmode.upper() == "ALL": 
-                        results["Iterations"][iteration]["FlowStats"] = self.getResultsDictFromDb(resultsfilename, mode="FLOW")
+                    for mode in resultmodes:
+                        if mode.upper() == "FLOW" or mode.upper() == "ALL": 
+                            results["Iterations"][iteration]["FlowStats"] = self.getResultsDictFromDb(resultsfilename, mode="FLOW")
 
-                    if resultsmode.upper() == "STREAM" or resultsmode.upper() == "ALL": 
-                        results["Iterations"][iteration]["StreamStats"] = self.getResultsDictFromDb(resultsfilename, mode="STREAM")
+                        if mode.upper() == "STREAM" or mode.upper() == "ALL": 
+                            results["Iterations"][iteration]["StreamStats"] = self.getResultsDictFromDb(resultsfilename, mode="STREAM")
 
-                    if resultsmode.upper() == "STREAMBLOCK" or resultsmode.upper() == "ALL": 
-                        results["Iterations"][iteration]["StreamBlockStats"] = self.getResultsDictFromDb(resultsfilename, mode="STREAMBLOCK")
+                        if mode.upper() == "STREAMBLOCK" or mode.upper() == "ALL": 
+                            results["Iterations"][iteration]["StreamBlockStats"] = self.getResultsDictFromDb(resultsfilename, mode="STREAMBLOCK")
+
+                        if mode.upper() == "PORT" or mode.upper() == "ALL": 
+                            results["Iterations"][iteration]["PortStats"] = self.getPortResultsDictFromDb(resultsfilename)
+                        
 
                     #self.generateCsv(resultsfilename)
                 
@@ -1136,7 +1142,7 @@ class StcGen:
         self.__addRxEotStreamCustomResultsTable(db, datasetid)
         self.__addTxRxEotStreamCustomResultsTable(db, datasetid)
 
-        # Create a dictionary with the API handles for all objects.        
+        # Create a dictionary with the API handles for all objects. This will allow us to convert DB object handles to API object handles.
         db.execute("SELECT * FROM HandleMap")        
         handlemap = defaultdict(dict)
         for row in db.fetchall():
@@ -1585,12 +1591,232 @@ class StcGen:
         dict
             A dictionary that contains results.
 
-            { <PortName>: { Tx: { <TxStats> },
-                            Rx: { <RxStats> } } }
+            { <PortName>: { 'ApiHandle': 'port3',
+                            'DbHandle': 2532,
+                            'GeneratorStatus': 'STOPPED',
+                            'IsVirtual': 0,
+                            'Location': '//10.140.96.81/5/6',
+                            'Tx': { <TxStats> },
+                            'Rx': { <RxStats> } } }
 
             The following <Stats> keys are provided:
+            Tx
+                'AlarmState'                              
+                'CounterTimestamp'                        
+                'GeneratorAbortFrameCount'                
+                'GeneratorAbortFrameRate'                 
+                'GeneratorBitRate'                        
+                'GeneratorCrcErrorFrameCount'             
+                'GeneratorCrcErrorFrameRate'              
+                'GeneratorFrameCount'                     
+                'GeneratorFrameRate'                      
+                'GeneratorIpv4FrameCount'                 
+                'GeneratorIpv4FrameRate'                  
+                'GeneratorIpv6FrameCount'                 
+                'GeneratorIpv6FrameRate'                  
+                'GeneratorJumboFrameCount'                
+                'GeneratorJumboFrameRate'                 
+                'GeneratorL3ChecksumErrorCount'           
+                'GeneratorL3ChecksumErrorRate'            
+                'GeneratorL4ChecksumErrorCount'           
+                'GeneratorL4ChecksumErrorRate'            
+                'GeneratorMplsFrameCount'                 
+                'GeneratorMplsFrameRate'                  
+                'GeneratorOctetCount'                     
+                'GeneratorOctetRate'                      
+                'GeneratorOversizeFrameCount'             
+                'GeneratorOversizeFrameRate'              
+                'GeneratorSigFrameCount'                  
+                'GeneratorSigFrameRate'                   
+                'GeneratorUndersizeFrameCount'            
+                'GeneratorUndersizeFrameRate'             
+                'GeneratorVlanFrameCount'                 
+                'GeneratorVlanFrameRate'                  
+                'HwFrameCount'                            
+                'L1BitCount'                              
+                'L1BitRate'                               
+                'L1BitRatePercent'                        
+                'LastModified'                            
+                'PcTimestamp'                             
+                'PfcFrameCount'                           
+                'PfcPri0FrameCount'                       
+                'PfcPri1FrameCount'                       
+                'PfcPri2FrameCount'                       
+                'PfcPri3FrameCount'                       
+                'PfcPri4FrameCount'                       
+                'PfcPri5FrameCount'                       
+                'PfcPri6FrameCount'                       
+                'PfcPri7FrameCount'                       
+                'RateTimestamp'                           
+                'ResultState'                             
+                'TotalBitCount'                           
+                'TotalBitRate'                            
+                'TotalCellCount'                          
+                'TotalCellRate'                           
+                'TotalFrameCount'                         
+                'TotalFrameRate'                          
+                'TotalIpv4FrameCount'                     
+                'TotalIpv4FrameRate'                      
+                'TotalIpv6FrameCount'                     
+                'TotalIpv6FrameRate'                      
+                'TotalMplsFrameCount'                     
+                'TotalMplsFrameRate'                      
+                'TotalOctetCount'                         
+                'TotalOctetRate'                          
+                'TxDuration'                              
 
-            <ToDo>
+            Rx
+                'AlarmState'                             
+                'AvgLatency'                             
+                'ComboTriggerCount'                      
+                'ComboTriggerRate'                       
+                'CorrectedBaseRFecErrorCount'            
+                'CorrectedRsFecErrorCount'               
+                'CorrectedRsFecSymbols'                  
+                'CounterTimestamp'                       
+                'DroppedFrameCount'                      
+                'DuplicateFrameCount'                    
+                'FcoeFrameCount'                         
+                'FcoeFrameRate'                          
+                'FcsErrorFrameCount'                     
+                'FcsErrorFrameRate'                      
+                'FirstArrivalTime'                       
+                'HwFrameCount'                           
+                'IcmpFrameCount'                         
+                'IcmpFrameRate'                          
+                'InOrderFrameCount'                      
+                'Ipv4ChecksumErrorCount'                 
+                'Ipv4ChecksumErrorRate'                  
+                'Ipv4FrameCount'                         
+                'Ipv4FrameRate'                          
+                'Ipv6FrameCount'                         
+                'Ipv6FrameRate'                          
+                'Ipv6OverIpv4FrameCount'                 
+                'Ipv6OverIpv4FrameRate'                  
+                'JumboFrameCount'                        
+                'JumboFrameRate'                         
+                'L1BitCount'                             
+                'L1BitRate'                              
+                'L1BitRatePercent'                       
+                'LastArrivalTime'                        
+                'LastModified'                           
+                'LateFrameCount'                         
+                'MaxFrameLength'                         
+                'MaxLatency'                             
+                'MinFrameLength'                         
+                'MinLatency'                             
+                'MplsFrameCount'                         
+                'MplsFrameRate'                          
+                'OutSeqFrameCount'                       
+                'OversizeFrameCount'                     
+                'OversizeFrameRate'                      
+                'PauseFrameCount'                        
+                'PauseFrameRate'                         
+                'PcTimestamp'                            
+                'PfcFrameCount'                          
+                'PfcFrameRate'                           
+                'PfcPri0FrameCount'                      
+                'PfcPri0FrameRate'                       
+                'PfcPri0Quanta'                          
+                'PfcPri1FrameCount'                      
+                'PfcPri1FrameRate'                       
+                'PfcPri1Quanta'                          
+                'PfcPri2FrameCount'                      
+                'PfcPri2FrameRate'                       
+                'PfcPri2Quanta'                          
+                'PfcPri3FrameCount'                      
+                'PfcPri3FrameRate'                       
+                'PfcPri3Quanta'                          
+                'PfcPri4FrameCount'                      
+                'PfcPri4FrameRate'                       
+                'PfcPri4Quanta'                          
+                'PfcPri5FrameCount'                      
+                'PfcPri5FrameRate'                       
+                'PfcPri5Quanta'                          
+                'PfcPri6FrameCount'                      
+                'PfcPri6FrameRate'                       
+                'PfcPri6Quanta'                          
+                'PfcPri7FrameCount'                      
+                'PfcPri7FrameRate'                       
+                'PfcPri7Quanta'                          
+                'PostBaseRFecSerRate'                    
+                'PostRsFecSerRate'                       
+                'PrbsBitErrorCount'                      
+                'PrbsBitErrorRate'                       
+                'PrbsBitErrorRatio'                      
+                'PrbsErrorFrameCount'                    
+                'PrbsErrorFrameRate'                     
+                'PrbsFillOctetCount'                     
+                'PrbsFillOctetRate'                      
+                'PreBaseRFecSerRate'                     
+                'PreRsFecSerRate'                        
+                'PreambleMaxLength'                      
+                'PreambleMinLength'                      
+                'PreambleTotalBytes'                     
+                'RateTimestamp'                          
+                'ReorderedFrameCount'                    
+                'ResultState'                            
+                'SigFrameCount'                          
+                'SigFrameRate'                           
+                'TcpChecksumErrorCount'                  
+                'TcpChecksumErrorRate'                   
+                'TcpFrameCount'                          
+                'TcpFrameRate'                           
+                'TotalBitCount'                          
+                'TotalBitRate'                           
+                'TotalCellCount'                         
+                'TotalCellRate'                          
+                'TotalFrameCount'                        
+                'TotalFrameRate'                         
+                'TotalLatency'                           
+                'TotalOctetCount'                        
+                'TotalOctetRate'                         
+                'Trigger1Count'                          
+                'Trigger1Name'                           
+                'Trigger1Rate'                           
+                'Trigger2Count'                          
+                'Trigger2Name'                           
+                'Trigger2Rate'                           
+                'Trigger3Count'                          
+                'Trigger3Name'                           
+                'Trigger3Rate'                           
+                'Trigger4Count'                          
+                'Trigger4Name'                           
+                'Trigger4Rate'                           
+                'Trigger5Count'                          
+                'Trigger5Name'                           
+                'Trigger5Rate'                           
+                'Trigger6Count'                          
+                'Trigger6Name'                           
+                'Trigger6Rate'                           
+                'Trigger7Count'                          
+                'Trigger7Name'                           
+                'Trigger7Rate'                           
+                'Trigger8Count'                          
+                'Trigger8Name'                           
+                'Trigger8Rate'                           
+                'UdpChecksumErrorCount'                  
+                'UdpChecksumErrorRate'                   
+                'UdpFrameCount'                          
+                'UdpFrameRate'                           
+                'UncorrectedBaseRFecErrorCount'          
+                'UncorrectedRsFecErrorCount'             
+                'UndersizeFrameCount'                    
+                'UndersizeFrameRate'                     
+                'UserDefinedFrameCount1'                 
+                'UserDefinedFrameCount2'                 
+                'UserDefinedFrameCount3'                 
+                'UserDefinedFrameCount4'                 
+                'UserDefinedFrameCount5'                 
+                'UserDefinedFrameCount6'                 
+                'UserDefinedFrameRate1'                  
+                'UserDefinedFrameRate2'                  
+                'UserDefinedFrameRate3'                  
+                'UserDefinedFrameRate4'                  
+                'UserDefinedFrameRate5'                  
+                'UserDefinedFrameRate6'                  
+                'VlanFrameCount'                         
+                'VlanFrameRate'                          
 
         """
         
@@ -1602,466 +1828,88 @@ class StcGen:
             # All queries will need to use this ID so that we are not pulling results
             # from different tests.
             datasetid = self.__getLatestDataSetId(db)
-
-        # We need the Tx rate per stream for some of our calculations.    
-        # If available, we will use the data mining field "fps per stream" (ideal). Otherwise, we will need
-        # to calculate it from the port rates (less accurate).
         
-        # Find the FpsLoad for each port. This is plan-B if the data-mining rate is not available.
-        query = "SELECT \
-                    Port.Handle, \
-                    Port.Location, \
-                    GenC.SchedulingMode, \
-                    GenC.FpsLoad, \
-                    GenC.DataSetId \
-                 FROM \
-                    GeneratorConfig As GenC \
-                 LEFT JOIN Generator As Gen  ON GenC.ParentHnd = Gen.Handle \
-                 LEFT JOIN Port      ON Gen.ParentHnd  = Port.Handle \
-                 WHERE \
-                    GenC.DataSetId = " + str(datasetid) + " AND Gen.DataSetId = " + str(datasetid) + " AND Port.DataSetId = " + str(datasetid)
-        
-        db.execute(query)
-        
-        portconfig = defaultdict(dict)
-        for row in db.fetchall():
-            port = row[0]                    
-            portconfig[port]['location'] = row[1]
-            portconfig[port]['mode']     = row[2]
-            portconfig[port]['fps']      = row[3]            
-
-            # Determine the number of streams for the port.
-            query = "SELECT sum(StreamBlock.StreamCount) FROM StreamBlock WHERE StreamBlock.ParentHnd = " + str(port) + " AND DataSetId = " + str(datasetid)
-            db.execute(query)
-            portconfig[port]['streamcount'] = db.fetchone()[0]        
-
-        # Add the custom SQLite tables that make it easier to parse the results.
-        self.__addRxEotStreamCustomResultsTable(db, datasetid)
-        self.__addTxRxEotStreamCustomResultsTable(db, datasetid)
-
-        # Create a dictionary with the API handles for all objects.        
+        # Create a dictionary with the API handles for all objects. This will allow us to convert DB object handles to API object handles.      
         db.execute("SELECT * FROM HandleMap")        
         handlemap = defaultdict(dict)
         for row in db.fetchall():
             handlemap[row[1]] = row[0]
 
-        # Now, extract the stream results per port from the database and add it to the results dictionary.
-        query = "SELECT * FROM TxRxEotStreamCustomResults WHERE DataSetId = " + str(datasetid)
+        # Create a dictionary with all of the port information. The DB object is used as the dictionary key.
+        db.execute("SELECT * FROM Port")        
+        portinfo = defaultdict(dict)
+        description = db.description
+        for row in db.fetchall():
+            results = self.__getResultsAsDict(row, description)            
+            portinfo[results['Handle']] = results
+
+        # Create a dictionary with all of the generator information. The DB object is used as the dictionary key.
+        # I want this for one thing only...the generator state. This will tell us if the generator is running when
+        # we gather these results.
+        db.execute("SELECT State, ParentHnd FROM Generator")        
+        generatorinfo = defaultdict(dict)
+        for row in db.fetchall():            
+            status = row[0]
+            portobject = row[1]
+            portinfo[portobject]['GeneratorStatus'] = status
         
-        resultsdict   = defaultdict(dict)
-        flowremainder = defaultdict(dict)
-       
+        resultsdict = defaultdict(dict)
+
+        # Start with the Generator results.
+        query = "SELECT * FROM GeneratorPortResults WHERE DataSetId = " + str(datasetid)               
         db.execute(query)
         description = db.description
         for row in db.fetchall():
-            # Each row represents a single flow result.
-            # Some of the statistics are stored in the results database, and the rest we need to calculate.
-            # Start by dealing with the extracted results.
             results = self.__getResultsAsDict(row, description)
-
-            # Skip all streams that did not transmit any frames.
-            if results['Tx Frames'] < 1:
-                continue          
-            
-            txport = results['TxPortHandle']        
-            rxport = results['RxPortHandle']
-            
-            if results['StreamId'] < 1:
-                # Use the TxStreamId instead.
-                results['StreamId'] = results['TxStreamId']
-
-            # If the user has defined analyzer filters, which changes the hashing algorithm on the Rx port,
-            # we need to determine how many Rx flows were created for that one stream on that Rx port.
-            # All of the Tx counts and rates will need to be divided by the number of flows generated.
-            if rxport != "N/A":
-                query = "SELECT count(StreamId) FROM TxRxEotStreamCustomResults WHERE RxPortHandle = " + str(rxport) + " AND StreamId = " + str(results['StreamId'])
-                db.execute(query)
-                for entry in db.fetchall():
-                    rxflowcount = entry[0]                
-            else:
-                # There are actually no flows received on this port, but this rxflowcount is only
-                # used to correct the Tx count for more than one Rx flow.
-                rxflowcount = 1
-
-            # Make corrections if there are multiple Rx flows per stream on this port.
-            if 'StreamBlock.Rate.Fps' in results:
-                results['StreamBlock.Rate.Fps'] = results['StreamBlock.Rate.Fps'] / rxflowcount            
-
-            txframes = results['Tx Frames']
-            results['Tx Frames'] = int(results['Tx Frames'] / rxflowcount)
-            results['Tx Bytes']  = int(results['Tx Bytes']  / rxflowcount)
-
-            if rxflowcount > 1:
-                # Attempt to account for roundoff error.
-                # NOTE: Since we cannot guarantee which flows are received first on the receiver, we cannot 100% determine
-                #       which Rx flows need to have an additional frame added to their Tx count.
-                streamkey = str(rxport) + "." + str(results['StreamId'])
-                if streamkey in flowremainder:
-                    flowremainder[streamkey] += 1
-                else:
-                    flowremainder[streamkey] = 1
-                if txframes % rxflowcount >= flowremainder[streamkey]:
-                    results['Tx Frames'] += 1
-            # End multiple flow corrections.
-
-            # Add all of the statistics from the SQLite query to the flowresult dictionary.
-            flowresult = defaultdict(dict)
-            flowresult['Tx Port Location'] = portconfig[txport]['location']
-
-            if rxport != "N/A":
-                flowresult['Rx Port Location'] = portconfig[rxport]['location']
-            else:
-                flowresult['Rx Port Location'] = "N/A"
-
-            for key in results.keys():
-                flowresult[key] = results[key]
-                
-                # Look for data-mining fields (they start with "StreamBlock"). Convert to human-readable values if necessary.
-                # Only worry about non-empty values.
-                if key.startswith("StreamBlock.") and results[key]: 
-
-                    # Convert the hex value to an IPv4, IPv6 or MAC address if necessary.                                
-                    if re.search(r'StreamBlock\.FrameConfig\.ipv4:IPv4\.[0-9]+\..+Addr', key):
-                        # Convert the IPv4 hex string to an integer.
-                        value = int(results[key], 16)
-                        # Convert the integer to an IPv6 address.
-                        flowresult[key] = str(IPAddress(value))
-                    elif re.search(r'StreamBlock\.FrameConfig\.ipv6:IPv6\.[0-9]+\..+Addr', key):
-                        # Convert the IPv6 hex string to an integer.
-                        value = int(results[key], 16)
-                        # Convert the integer to an IPv6 address.
-                        flowresult[key] = str(IPAddress(value))
-                    elif re.search(r'StreamBlock\.FrameConfig\.ethernet:EthernetII\.[0-9]+\..+Mac', key):
-                        # Convert the MAC hex string to an integer.
-                        value = int(results[key], 16)
-                        # Convert the integer to a MAC address (00-01-02-03-04-05).
-                        flowresult[key] = str(EUI(value))
-            
-            # Determine the Tx rate (in FPS) and duration.
-            if 'StreamBlock.Rate.Fps' not in results:
-                # The Tx FPS per stream information is not present (data-mining).
-                # We need to attempt to calculate the Tx duration and Tx rate (FPS) manually, based on the configuration data (not the result data).
-                if portconfig[txport]['mode'] == "RATE_BASED":
-                    # The rate is specified per streamblock. Extract the load from the streamblock.
-                    streamblock = results['ParentStreamBlock']
-                    query = "SELECT FpsLoad, StreamCount FROM StreamBlock WHERE Handle = " + str(streamblock)
-                    db.execute(query)
-                    streamblockinfo = db.fetchone()
-                    streamblocktxfps = streamblockinfo[0]
-                    streamcount      = streamblockinfo[1]
-
-                    txfps = streamblocktxfps / streamcount
-                    # Correct for multiple analyzer flows.
-                    txfps = txfps / rxflowcount             
-                    txduration = results['Tx Frames'] / txfps
-
-                elif portconfig[txport]['mode'] == "PORT_BASED":                
-                    # The rate is specified per port.
-                    txduration  = results['Tx Frames'] * portconfig[txport]['streamcount'] / portconfig[txport]['fps']
-                    txfps       = portconfig[txport]['fps'] / portconfig[txport]['streamcount']
-
-                else:
-                    # We don't support other modes. 
-                    # You COULD ignore this error, but all rate calculations would be incorrect.
-                    raise ValueError("WARNING: " + str(portconfig[txport]['mode']) + " scheduling is not supported. Rate calculations will be incorrect.")
-            else:
-                # Pull the Tx rate directly from the Tx stream results (data-mining).
-                txduration  = results['Tx Frames'] / results['StreamBlock.Rate.Fps']
-                # This rate is PER STREAM...even though it looks like it should be per streamblock.
-                txfps       = results['StreamBlock.Rate.Fps']                               
-
-            # Calculate the L1 byte rate.
-            if txduration == 0:
-                # Avoid a divide-by-zero error.
-                l1txbytespersecond = 0
-            else:
-                overhead           = results['Tx Frames'] * (12 + 8)  ;# 12 byte min IFG + 8 byte preamble
-                l1txbytespersecond = (results['Tx Bytes'] + overhead) / txduration
-            
-            # Attempt to use the first/last Rx timestamps to calculate the Rx rate (VERY ACCURATE).
-            # The timestamps are in microseconds. This will be used to calculate a number of stats.
-            # This only works if the first/last timestamps are populated. 
-            # I believe only the JITTER, LATENCY_JITTER, FORWARDING, and INTERARRIVALTIME modes support these stats,
-            # however, this might be module dependent.
-            rxtime = (results['Last TimeStamp'] - results['First TimeStamp']) / 1000000
-
-            if rxtime <= 0:
-                # Using the timestamps didn't work for some reason.
-                # Make a best-guess at the Rx rate. It will not be as accurate as using the timestamps method.
-                rxtime = results['Rx Frames'] / txfps
-
-            if rxtime != 0:
-                rxfps              = results['Rx Frames'] / rxtime
-                overhead           = results['Rx Frames'] * (12 + 8) ;# 12 byte min IFG + 8 byte preamble
-                l1rxbytespersecond = (results['Rx Bytes'] + overhead) / rxtime
-            else:
-                # Avoid a divide-by-zero error.
-                rxfps              = 0
-                l1rxbytespersecond = 0
-            
-            # The "IsExpectedPort" field is only valid when frames have been received on a port.
-            # If the traffic was completely dropped, then the "IsExpectedPort" will report 0.
-            if (results['Rx Frames'] > 0 and results['IsExpectedPort']) or results['Rx Frames'] == 0:
-                flowresult['Rx Expected Frames'] = results['Tx Frames']
-            else:
-                flowresult['Rx Expected Frames'] = 0
-            
-            flowresult['Tx Frame Rate']  = txfps
-            flowresult['Tx Rate (Bps)']  = l1txbytespersecond
-            flowresult['Tx Rate (bps)']  = l1txbytespersecond * 8
-            flowresult['Tx Rate (Kbps)'] = l1txbytespersecond * 8 / 1000
-            flowresult['Tx Rate (Mbps)'] = l1txbytespersecond * 8 / 1000000
-            
-            # NOT taking into account duplicate frames.
-            #flowresult['Frames Delta']  =  results['Tx Frames'] - results['Rx Frames'] + results['DuplicateFrameCount']
-            flowresult['Frames Delta']   = abs(flowresult['Rx Expected Frames'] - results['Rx Frames'])
-            flowresult['Rx Frame Rate']  = rxfps
-            flowresult['Rx Rate (Bps)']  = l1rxbytespersecond
-            flowresult['Rx Rate (bps)']  = l1rxbytespersecond * 8
-            flowresult['Rx Rate (Kbps)'] = l1rxbytespersecond * 8 / 1000
-            flowresult['Rx Rate (Mbps)'] = l1rxbytespersecond * 8 / 1000000
-            
-            if flowresult['Rx Expected Frames'] == 0:
-                loss = 0
-            else:
-                loss = flowresult['Frames Delta'] * 100.0 / flowresult['Rx Expected Frames']
-
-            flowresult['Loss %']                    = loss
-            flowresult['Packet Loss Duration (ms)'] = txduration * flowresult['Loss %'] * 1000 / 100.0
-            
-            if flowresult['DuplicateFrameCount'] == "":
-                flowresult['DuplicateFrameCount'] = 0
-
-            sb = flowresult['StreamBlockName']
-            rxportname = flowresult['Rx Port']
-
-            # Add the API handles to the results. This is just for convenience. Just use the existing
-            # value if we are unable find the corresponding API handle.
-            flowresult['ApiStreamBlockHandle'] = handlemap.get(flowresult['ParentStreamBlock'], "N/A")
-            flowresult['ApiTxPortHandle']      = handlemap.get(flowresult['TxPortHandle'], "N/A")
-            flowresult['ApiRxPortHandle']      = handlemap.get(flowresult['RxPortHandle'], "N/A")
-
-            # Transfer the individual flow result to the return resultsdict.
-            
-            # The following code is for aggregating the results.
-            # If the mode is "FLOW", no aggregation is performed.
-            # If the mode is "STREAM" or "STREAMBLOCK", then the results are aggregated at that level.
-
-            #txid = str(results['TxStreamId'])
-
-            if mode.upper() == "FLOW":                        
-                # Store the flow result in the resultsdict array.  
-                # We need to store each flow in the dictionary using a unique key.
-                # The unique key is created from the all of the CompX values.            
-                key  = str(results['StreamId']) + "." 
-                key += str(results['Comp16_1']) + "." 
-                key += str(results['Comp16_2']) + "." 
-                key += str(results['Comp16_3']) + "." 
-                key += str(results['Comp16_4'])
-
-                # Warn the user if this entry already exists.
-                if sb in resultsdict and key in resultsdict[sb] and rxportname in resultsdict[sb][key]:
-                    # This case should not occur. If it does, we may need to reconsider the (supposedly) unique 
-                    # dictionary keys (streamblock:key:rxportname) that we are using.
-                    print("WARNING: The flow " + sb + ":" + key + ":" + rxportname + " already exists. The results may be missing an entry.")
-                
-                resultsdict[sb][key] = defaultdict(dict)
-                resultsdict[sb][key][rxportname] = flowresult
-                resultsdict[sb][key][rxportname]['FlowCount'] = 1
-                
-            elif mode.upper() == "STREAM":
-                # Aggregate the flow results (per RxPort) for this stream or streamblock.
-                streamid = results['StreamId']
-
-                if streamid not in resultsdict[sb]:
-                    resultsdict[sb][streamid] = defaultdict(dict)
-
-                    # Create a new entry for this stream.
-                    resultsdict[sb][streamid][rxportname] = flowresult 
-                    resultsdict[sb][streamid][rxportname]['FlowCount'] = 1
-                else:
-                    resultsdict[sb][streamid][rxportname]['Tx Frames']           += flowresult['Tx Frames']
-                    resultsdict[sb][streamid][rxportname]['Tx Bytes']            += flowresult['Tx Bytes']
-                    resultsdict[sb][streamid][rxportname]['Rx Frames']           += flowresult['Rx Frames']
-                    resultsdict[sb][streamid][rxportname]['Rx Bytes']            += flowresult['Rx Bytes']
-                    resultsdict[sb][streamid][rxportname]['DuplicateFrameCount'] += flowresult['DuplicateFrameCount']
-                                
-                    resultsdict[sb][streamid][rxportname]['First TimeStamp'] = min(resultsdict[sb][streamid][rxportname]['First TimeStamp'], flowresult['First TimeStamp'])                
-                    resultsdict[sb][streamid][rxportname]['Last TimeStamp']  = max(resultsdict[sb][streamid][rxportname]['Last TimeStamp'],  flowresult['Last TimeStamp'])
-                    
-                    # Sum the latency. We'll divide it by the total flow count later.
-                    resultsdict[sb][streamid][rxportname]['Store-Forward Avg Latency (ns)'] += flowresult['Store-Forward Avg Latency (ns)']
-                                    
-                    resultsdict[sb][streamid][rxportname]['Store-Forward Min Latency (ns)'] = min(resultsdict[sb][streamid][rxportname]['Store-Forward Min Latency (ns)'], flowresult['Store-Forward Min Latency (ns)'])
-                    resultsdict[sb][streamid][rxportname]['Store-Forward Max Latency (ns)'] = max(resultsdict[sb][streamid][rxportname]['Store-Forward Max Latency (ns)'], flowresult['Store-Forward Max Latency (ns)'])
-                    
-                    resultsdict[sb][streamid][rxportname]['Tx Frame Rate']      += flowresult['Tx Frame Rate']
-                    resultsdict[sb][streamid][rxportname]['Tx Rate (Bps)']      += flowresult['Tx Rate (Bps)']
-                    resultsdict[sb][streamid][rxportname]['Tx Rate (bps)']      += flowresult['Tx Rate (bps)']
-                    resultsdict[sb][streamid][rxportname]['Tx Rate (Kbps)']     += flowresult['Tx Rate (Kbps)']
-                    resultsdict[sb][streamid][rxportname]['Tx Rate (Mbps)']     += flowresult['Tx Rate (Mbps)']
-                    resultsdict[sb][streamid][rxportname]['Rx Expected Frames'] += flowresult['Rx Expected Frames']
-                    resultsdict[sb][streamid][rxportname]['Frames Delta']       += flowresult['Frames Delta']
-                    resultsdict[sb][streamid][rxportname]['Rx Frame Rate']      += flowresult['Rx Frame Rate']
-                    resultsdict[sb][streamid][rxportname]['Rx Rate (Bps)']      += flowresult['Rx Rate (Bps)']
-                    resultsdict[sb][streamid][rxportname]['Rx Rate (bps)']      += flowresult['Rx Rate (bps)']
-                    resultsdict[sb][streamid][rxportname]['Rx Rate (Kbps)']     += flowresult['Rx Rate (Kbps)']
-                    resultsdict[sb][streamid][rxportname]['Rx Rate (Mbps)']     += flowresult['Rx Rate (Mbps)']
-                    
-                    if resultsdict[sb][streamid][rxportname]['Rx Expected Frames'] == 0:
-                        # Avoid a divide-by-zero error.
-                        loss = 0
-                    else:
-                        loss = resultsdict[sb][streamid][rxportname]['Frames Delta'] * 100.0 / resultsdict[sb][streamid][rxportname]['Rx Expected Frames']
-
-                    resultsdict[sb][streamid][rxportname]['Loss %']                    = loss
-                    resultsdict[sb][streamid][rxportname]['Packet Loss Duration (ms)'] = txduration * resultsdict[sb][streamid][rxportname]['Loss %'] * 1000 / 100.0                                        
-
-                    resultsdict[sb][streamid][rxportname]['FlowCount'] += 1       
-
-            elif mode.upper() == "STREAMBLOCK":
-
-                if rxportname not in resultsdict[sb]:
-                    resultsdict[sb][rxportname] = defaultdict(dict)
-
-                    # Create a new entry for this [rxport][stream/streamblock].                
-                    resultsdict[sb][rxportname] = flowresult 
-                    resultsdict[sb][rxportname]['FlowCount'] = 1
-
-                else:
-                    resultsdict[sb][rxportname]['Tx Frames']           += flowresult['Tx Frames']
-                    resultsdict[sb][rxportname]['Tx Bytes']            += flowresult['Tx Bytes']
-                    resultsdict[sb][rxportname]['Rx Frames']           += flowresult['Rx Frames']
-                    resultsdict[sb][rxportname]['Rx Bytes']            += flowresult['Rx Bytes']
-                    resultsdict[sb][rxportname]['DuplicateFrameCount'] += flowresult['DuplicateFrameCount']
-                                
-                    resultsdict[sb][rxportname]['First TimeStamp'] = min(resultsdict[sb][rxportname]['First TimeStamp'], flowresult['First TimeStamp'])                
-                    resultsdict[sb][rxportname]['Last TimeStamp']  = max(resultsdict[sb][rxportname]['Last TimeStamp'],  flowresult['Last TimeStamp'])
-                    
-                    # Sum the latency. We'll divide it by the total flow count later.
-                    resultsdict[sb][rxportname]['Store-Forward Avg Latency (ns)'] += flowresult['Store-Forward Avg Latency (ns)']
-                                    
-                    resultsdict[sb][rxportname]['Store-Forward Min Latency (ns)'] = min(resultsdict[sb][rxportname]['Store-Forward Min Latency (ns)'], flowresult['Store-Forward Min Latency (ns)'])
-                    resultsdict[sb][rxportname]['Store-Forward Max Latency (ns)'] = max(resultsdict[sb][rxportname]['Store-Forward Max Latency (ns)'], flowresult['Store-Forward Max Latency (ns)'])
-                    
-                    resultsdict[sb][rxportname]['Tx Frame Rate']      += flowresult['Tx Frame Rate']
-                    resultsdict[sb][rxportname]['Tx Rate (Bps)']      += flowresult['Tx Rate (Bps)']
-                    resultsdict[sb][rxportname]['Tx Rate (bps)']      += flowresult['Tx Rate (bps)']
-                    resultsdict[sb][rxportname]['Tx Rate (Kbps)']     += flowresult['Tx Rate (Kbps)']
-                    resultsdict[sb][rxportname]['Tx Rate (Mbps)']     += flowresult['Tx Rate (Mbps)']
-                    resultsdict[sb][rxportname]['Rx Expected Frames'] += flowresult['Rx Expected Frames']
-                    resultsdict[sb][rxportname]['Frames Delta']       += flowresult['Frames Delta']
-                    resultsdict[sb][rxportname]['Rx Frame Rate']      += flowresult['Rx Frame Rate']
-                    resultsdict[sb][rxportname]['Rx Rate (Bps)']      += flowresult['Rx Rate (Bps)']
-                    resultsdict[sb][rxportname]['Rx Rate (bps)']      += flowresult['Rx Rate (bps)']
-                    resultsdict[sb][rxportname]['Rx Rate (Kbps)']     += flowresult['Rx Rate (Kbps)']
-                    resultsdict[sb][rxportname]['Rx Rate (Mbps)']     += flowresult['Rx Rate (Mbps)']
-                    
-                    if resultsdict[sb][rxportname]['Rx Expected Frames'] == 0:
-                        # Avoid a divide-by-zero error.
-                        loss = 0
-                    else:
-                        loss = resultsdict[sb][rxportname]['Frames Delta'] * 100.0 / resultsdict[sb][rxportname]['Rx Expected Frames']
-
-                    resultsdict[sb][rxportname]['Loss %']                    = loss
-                    resultsdict[sb][rxportname]['Packet Loss Duration (ms)'] = txduration * resultsdict[sb][rxportname]['Loss %'] * 1000 / 100.0                                        
-
-                    resultsdict[sb][rxportname]['FlowCount'] += 1                
-            else:
-                raise Exception("The results mode '" + mode + "' is invalid.")
-
-        # Lastly, we need to calculate averages, correct Tx counts for Rx flows belonging to the same stream, as well as clean up some labels.
-        # Keep a list of all Rx (analyzer) filters.
-        rxfilterlist = []
-        if mode.upper() == "FLOW" or mode.upper() == "STREAM":
-            for sb in resultsdict.keys():
-                for key in resultsdict[sb].keys():
-                    for rxport in resultsdict[sb][key].keys():
-
-                        if rxport == "N/A":
-                            continue
-
-                        # Determine the correct label to substitute for the "FilteredName_X" keys.
-                        # This information is in the RxEotAnalyzerFilterNamesTable table, and is ONLY 
-                        # valid if the Rx port has an analyzer filter defined.
-                        rxportobject = resultsdict[sb][key][rxport]['RxPortHandle']
-                        query = "SELECT * FROM RxEotAnalyzerFilterNamesTable WHERE ParentHnd = " + str(rxportobject)   
-                        db.execute(query)
-                        for row in db.fetchall():
-                            # The filters are labeled FilteredName_1 through FilteredName_10.
-                            for index in range(1,11):
-                                newlabel = row[index + 3]
-                                oldlabel = "FilteredValue_" + str(index)
-
-                                if newlabel:
-                                    # Add the correct filtername to each flow/stream/streamblock entry in the results.                            
-                                    resultsdict[sb][key][rxport][newlabel] = resultsdict[sb][key][rxport][oldlabel]
-
-                                    if newlabel not in rxfilterlist:
-                                        rxfilterlist.append(newlabel)                        
-                                else:
-                                    # Trim off unused filters from the dictionary.
-                                    resultsdict[sb][key][rxport].pop(oldlabel)  
-
-                        # Calculate the average latency.
-                        latency   = resultsdict[sb][key][rxport]['Store-Forward Avg Latency (ns)']
-                        flowcount = resultsdict[sb][key][rxport]['FlowCount']
-                        resultsdict[sb][key][rxport]['Store-Forward Avg Latency (ns)'] = latency / flowcount
-                        
-                        # Add the RxFilterList to each entry in the results dictionary.
            
-                        # The flow lable is a little misleading. It could be a flow, stream or streamblock.
-                        resultsdict[sb][key][rxport]['RxFilterList'] = rxfilterlist
+            portobject = results['ParentPort']                                
+            portname = portinfo[portobject]['Name']            
 
-                        # Make sure all filters are listed for all flows.
-                        for rxfilter in rxfilterlist:
-                            if rxfilter not in resultsdict[sb][key][rxport].keys():
-                                resultsdict[sb][key][rxport][rxfilter] = ""
+            if portname in resultsdict.keys():
+                print("WARNING: There appears to be a duplicate port name '" + portname + "'. The results will be impacted.")
 
+            resultsdict[portname] = defaultdict(dict)
 
-        elif mode.upper() == "STREAMBLOCK":
-            for sb in resultsdict.keys():                
-                for rxport in resultsdict[sb].keys():
+            results.pop('Active')
+            results.pop('DataSetId')
+            results.pop('Handle')
+            results.pop('Id')
+            results.pop('LocalActive')
+            results.pop('Name')
+            results.pop('ParentHnd')
+            results.pop('ParentPort')
+            results.pop('PortUiName')
 
-                    if rxport == "N/A":
-                        continue
+            resultsdict[portname]['Tx'] = results         
 
-                    # Determine the correct label to substitute for the "FilteredName_X" keys.
-                    # This information is in the RxEotAnalyzerFilterNamesTable table, and is ONLY 
-                    # valid if the Rx port has an analyzer filter defined.
-                    rxportobject = resultsdict[sb][rxport]['RxPortHandle']
-                    query = "SELECT * FROM RxEotAnalyzerFilterNamesTable WHERE ParentHnd = " + str(rxportobject)   
-                    db.execute(query)
-                    for row in db.fetchall():
-                        # The filters are labeled FilteredName_1 through FilteredName_10.
-                        for index in range(1,11):
-                            newlabel = row[index + 3]
-                            oldlabel = "FilteredValue_" + str(index)
+            resultsdict[portname]['ApiHandle'] = handlemap.get(portobject, "N/A")
+            resultsdict[portname]['DbHandle'] = portinfo[portobject]['Handle']
+            resultsdict[portname]['Location'] = portinfo[portobject]['Location']
+            resultsdict[portname]['IsVirtual'] = portinfo[portobject]['IsVirtual']
+            resultsdict[portname]['GeneratorStatus'] = portinfo[portobject]['GeneratorStatus']            
 
-                            if newlabel:
-                                # Add the correct filtername to each flow/stream/streamblock entry in the results.                            
-                                resultsdict[sb][rxport][newlabel] = resultsdict[sb][rxport][oldlabel]
+        # Now grab the Analyzer results.
+        query = "SELECT * FROM AnalyzerPortResults WHERE DataSetId = " + str(datasetid)               
+        db.execute(query)
+        description = db.description
+        for row in db.fetchall():
+            results = self.__getResultsAsDict(row, description)
+           
+            portobject = results['ParentPort']                                
+            portname = portinfo[portobject]['Name']
 
-                                if newlabel not in rxfilterlist:
-                                    rxfilterlist.append(newlabel)                        
-                            else:
-                                # Trim off unused filters from the dictionary.
-                                resultsdict[sb][rxport].pop(oldlabel)  
+            # Remove some unnecessary keys from the results.
+            results.pop('Active')
+            results.pop('DataSetId')
+            results.pop('Handle')
+            results.pop('Id')
+            results.pop('LocalActive')
+            results.pop('Name')
+            results.pop('ParentHnd')
+            results.pop('ParentPort')
+            results.pop('PortUiName')
 
-                    # Calculate the average latency.
-                    latency   = resultsdict[sb][rxport]['Store-Forward Avg Latency (ns)']
-                    flowcount = resultsdict[sb][rxport]['FlowCount']
-                    resultsdict[sb][rxport]['Store-Forward Avg Latency (ns)'] = latency / flowcount
-                    
-                    # Add the RxFilterList to each entry in the results dictionary.
-       
-                    # The flow lable is a little misleading. It could be a flow, stream or streamblock.
-                    resultsdict[sb][rxport]['RxFilterList'] = rxfilterlist
-
-                    # Make sure all filters are listed for all flows.
-                    for rxfilter in rxfilterlist:
-                        if rxfilter not in resultsdict[sb][rxport].keys():
-                            resultsdict[sb][rxport][rxfilter] = ""                                                                       
+            resultsdict[portname]['Rx'] = results            
                     
         # We are done with the database.
         conn.close()
