@@ -55,6 +55,7 @@
 from __future__ import print_function
 
 import sys
+import platform
 import os
 import time
 import datetime
@@ -62,6 +63,9 @@ import re
 import getpass
 import json
 import sqlite3
+import logging
+
+import atexit
 
 from collections import defaultdict
 # netaddr is required for converting IP/MAC addresses.
@@ -83,7 +87,7 @@ class StcGen:
     #   Constructor/Destructor
     #
     #==============================================================================
-    def __init__(self, userest=False, labserverip=None, username=None, sessionname="StcGen", existingsession="", verbose=False, terminateonexit=False):
+    def __init__(self, userest=False, labserverip=None, username=None, sessionname="StcGen", existingsession=None, verbose=False, logpath=None, loglevel="INFO", cleanuponexit=True):
         """Initializes the object and loads the Spirent TestCenter API (either the ReST or native version).
 
         Parameters
@@ -100,14 +104,78 @@ class StcGen:
             The action to take if there is an existing session: join or kill. If not set, an exception will be raised if there
             is an existing session.
         verbose: bool
-            Increasing the logging verbosity if set to True.
-        terminateonexit: bool
-            Terminates the Lab Server session, if set to True, when cleaning up the object instance.
+            All log messages will be sent to STDOUT if set to True.
+        logpath: str
+            The parent directory where the temporary session directory will be created. Using this argument will override the
+            STC_LOG_OUTPUT_DIRECTORY environment variable. The default is './StcGen_logs'.
+        loglevel: str
+            The level of detail to include in the logs. These levels can be: ERROR, WARNING, INFO, DEBUG.
+        cleanuponexit: bool
+            Deletes the temporary session (logs) directory on exit.
 
         """
 
+        # Create the session temporary directory. This is where all logs and results will be stored during the session.
+        # All log files are saved in ./StcGen_logs/<YYY-MM-DD-HH-MM-SS_PIDXXXX>, unless the environment variable STC_LOG_OUTPUT_DIRECTORY is specified.
+
+        arguments = locals()
+
+        if cleanuponexit:
+            atexit.register(self.cleanupTempDirectory)
+
+        self.verbose = verbose
+
+        # Construct the log path.            
+        defaultlogpath = "./StcGen_logs"
+
+        now = datetime.datetime.now()
+        tempdir = now.strftime("%Y-%m-%d-%H-%M-%S")
+        tempdir += "_PID"
+        tempdir += str(os.getpid())
+        defaultlogpath = os.path.join(defaultlogpath, tempdir)
+        defaultlogpath = os.path.expanduser(defaultlogpath)
+        
+        # The STC_LOG_OUTPUT_DIRECTORY will override the default path.
+        self.logpath = os.getenv("STC_LOG_OUTPUT_DIRECTORY", defaultlogpath)
+
+        # The logpath argument will override everything.
+        if logpath:
+            self.logpath = logpath
+
+        self.logpath = os.path.abspath(self.logpath)
+        self.logfile = os.path.join(self.logpath, "stc_gen.log")        
+
+        if not os.path.exists(self.logpath):
+            os.makedirs(self.logpath)
+
+        # NOTE: Consider limiting the number of log directories that are created.
+        #       It would mean deleting older directories.
+        if loglevel.upper() == "ERROR":
+            self.loglevel = logging.ERROR
+        elif loglevel.upper() == "WARNING":
+            self.loglevel = logging.WARNING
+        elif loglevel.upper() == "INFO":
+            self.loglevel = logging.INFO
+        elif loglevel.upper() == "DEBUG":
+            self.loglevel = logging.DEBUG
+        else:
+            self.loglevel = logging.INFO
+
+        logging.basicConfig(filename=self.logfile, filemode="w", level=self.loglevel)
+        # Add timestamps to each log message.
+        logging.basicConfig(format="%(asctime)s %(message)s")
+        # The logger is now ready.        
+
         #print("DEBUG: Using PPRINT")
         #self.pp = pprint.PrettyPrinter(indent=2)
+
+        logging.info("Executing __init__: " + str(arguments))
+
+        logging.info("Python Version: " + str(sys.version))
+        logging.info("Platform: " + platform.platform())
+        logging.info("System: " + platform.system())
+        logging.info("Release: " + platform.release())
+        logging.info("Version: " + platform.version())
 
         if not username:
             username = getpass.getuser()
@@ -115,26 +183,30 @@ class StcGen:
         self.labserverip = labserverip
 
         if userest:
-            print("Using the native Python adaptor...")
+            logging.info("Using the Python ReST adapter")
             from stcrestclient import stcpythonrest
             self.stc = stcpythonrest.StcPythonRest()
+
+            logging.info("Using the Lab Server (" + labserverip + ") session " + sessionname + " - " + username)
         
             # This is the REST-only method for connecting to the server.
             self.stc.new_session(labserverip, session_name=sessionname, user_name=username, existing_session=existingsession)
 
         else:            
-            
+            logging.info("Using the native Python API")
             from StcPython import StcPython
             self.stc = StcPython()  
 
             if labserverip:                
-                print("DEBUG: WIP...need to determine if the existing session should be joined or killed.")  
+                logging.info("Using the Lab Server (" + labserverip + ") session " + sessionname + " - " + username)
                 self.stc.perform("CSTestSessionConnect", host=labserverip,
                                                          TestSessionName=sessionname,
                                                          OwnerId=username,
                                                          CreateNewTestSession="True")    
 
-        self.terminateonexit = terminateonexit
+        self.cleanuponexit = cleanuponexit
+
+        logging.info("Spirent TestCenter Version: " + self.stc.get("system1", "Version"))
         
         # This dictionary keeps track of relations that we need to resolve after all
         # objects have been created. This is necessary to prevent race conditions.
@@ -144,16 +216,8 @@ class StcGen:
         # The key is the object name so multiple objects with the same name is a problem.
         self.objects   = {}
 
-        return
+        logging.info("The StcGen object has been initialized.")
 
-    #==============================================================================
-    def __del__(self):
-        if self.terminateonexit and self.labserverip:
-            # Terminate the Lab Server session.
-            self.stc.perform("CSTestSessionDisconnect", Terminate="True")
-
-            print("DEBUG: NOTE...the disconnect is not working...")
-               
         return
 
     #==============================================================================
@@ -172,6 +236,8 @@ class StcGen:
             Set to True to delete the existing project and create a new configuration.
 
         """
+
+        logging.info("Executing loadJson: " + str(locals()))
 
         # The configuration should be specified in the JSON.
         if deleteExistingConfig:
@@ -197,9 +263,15 @@ class StcGen:
                     elif extension == "tcc" or extension == "db":
                         self.stc.perform("LoadFromDatabase", DatabaseConnectionString=filename)
                     else:
-                        raise Exception("The file '" + filename + "' needs to be either an XML, TCC or DB file.")
+                        errmsg = "The file '" + filename + "' needs to be either an XML, TCC or DB file."
+                        logging.error(errmsg)
+                        raise Exception(errmsg)
+
+                    logging.info("Successfully loaded the configuration file " + filename)
                 else:
-                    raise Exception("The file '" + filename + "' does not exist.")
+                    errmsg = "The configuration file '" + filename + "' does not exist."
+                    logging.error(errmsg)
+                    raise Exception(errmsg)
             else:
                 self.project = self.stc.get("system1", "children-project")
 
@@ -218,6 +290,8 @@ class StcGen:
             #       the name of the tests!!!
             self.testsdict = inputdict["Tests"]
 
+        logging.info("Successfully loaded the JSON configuration.")
+
         return
 
     #==============================================================================
@@ -225,6 +299,8 @@ class StcGen:
         """Delete the existing project and return the configuration to the default state.
 
         """
+
+        logging.info("Executing resetConfig:")
 
         # Reset the configuration.
         self.stc.perform("ResetConfig", config="system1")        
@@ -245,6 +321,8 @@ class StcGen:
         
         """
 
+        logging.info("Executing runAllTests:")
+
         self.connectAndApply()   
 
         results = {}
@@ -254,7 +332,7 @@ class StcGen:
             #testtype = self.testsdict[testname].get("Type","FixedDuration")
             results[testname] = self.runTest(testname, parametersdict=self.testsdict[testname].copy())
 
-        # print("Disconnecting from hardware...")
+        self.__lprint("Disconnecting from hardware...")
         self.stc.perform("ChassisDisconnectAll")
 
         return(results)
@@ -282,7 +360,9 @@ class StcGen:
         dict
             Returns a dictionary containing test status, statistics and results database filename information. 
 
-        """           
+        """         
+
+        logging.info("Executing runTest: " + str(locals()))
 
         # Options are: Ping, FixedDuration. Consider adding RFC 2544 and 2889 (as well as others).
         if not parametersdict:
@@ -296,7 +376,9 @@ class StcGen:
         elif testtype.lower() == "ping":
             results = self.runPingTest(testname, parametersdict=parametersdict, **kwargs)
         else:
-            raise Exception("Unknown test type '" + testtype + "' for test '" + testname + "'.")
+            errmsg = "Unknown test type '" + testtype + "' for test '" + testname + "'."
+            logging.error(errmsg)
+            raise Exception(errmsg)
 
         return(results)
 
@@ -342,6 +424,8 @@ class StcGen:
 
         """ 
 
+        logging.info("Executing runFixedDurationTest: " + str(locals()))
+
         # Override the keyword arguments with the parametersdict settings.
         duration     = parametersdict.get("Duration",     Duration)
         durationmode = parametersdict.get("DurationMode", DurationMode)
@@ -379,6 +463,7 @@ class StcGen:
 
         self.trafficLearn(learning)
 
+        self.__lprint("Starting devices...")
         self.stc.perform("DevicesStartAll")
 
         # If set to -1, use the configured load/framelength.
@@ -392,7 +477,7 @@ class StcGen:
             for load in loads:
                 currentfilename = resultsdbfilename
                 if load > 0:
-                    print("Setting Load to " + str(load))
+                    self.__lprint("Setting Load to " + str(load))
                     
                     # Add the load to the results filename.
                     path     = os.path.dirname(currentfilename)
@@ -406,7 +491,7 @@ class StcGen:
                         self.stc.config(port + ".generator.generatorconfig", SchedulingMode="PORT_BASED", LoadUnit=loadunit, FixedLoad=load)                  
 
                 if framelength > 0:
-                    print("Setting FrameLength to " + str(framelength))
+                    self.__lprint("Setting FrameLength to " + str(framelength))
                     
                     # Add the framelength to the results filename.
                     path     = os.path.dirname(currentfilename)
@@ -502,6 +587,8 @@ class StcGen:
 
         """                     
 
+        logging.info("Executing runPingTest: " + str(locals()))
+
         # The number of pings per device.
         count = parametersdict.get("Count", Count)
 
@@ -581,7 +668,10 @@ class StcGen:
     def trafficStart(self):
         """Start the traffic generators on all ports.
         """
-        # print("Starting generators...")
+
+        logging.info("Executing trafficStart: " + str(locals()))
+
+        self.__lprint("Starting generators...")
         self.stc.perform("GeneratorStart")
 
         return  
@@ -590,6 +680,9 @@ class StcGen:
     def trafficStop(self):
         """Stop the traffic generators on all ports.
         """        
+        logging.info("Executing trafficStop: " + str(locals()))
+
+        self.__lprint("Stopping generators...")
         self.stc.perform("GeneratorStop")
         return   
 
@@ -603,6 +696,9 @@ class StcGen:
             Either "L2" or "L3".        
 
         """
+
+        logging.info("Executing trafficLearn: " + str(locals()))
+
         if learningmode.upper() == "L2":
             self.stc.perform("ArpNdStartOnAllDevices")
             self.stc.perform("L2LearningStart")
@@ -624,15 +720,21 @@ class StcGen:
 
         """
 
+        logging.info("Executing trafficWaitUntilDone: " + str(locals()))
+
         # NOTE: This method will raise an exception if there are any ports where
         #       the DurationMode is set to CONTINUOUS.        
         for port in self.stc.get(self.project, "children-port").split():
             if self.stc.get(port + ".generator.generatorconfig", "DurationMode").upper() == "CONTINUOUS":
-                raise Exception("The DurationMode for port '" + self.stc.get(port, "Name") + "' is set to CONTINUOUS.")
+                errmsg = "The DurationMode for port '" + self.stc.get(port, "Name") + "' is set to CONTINUOUS."
+                logging.error(errmsg)
+                raise Exception(errmsg)
 
+        elapsedtime = 0
         while self.isTrafficRunning():
-            print("Test is running...")
+            self.__lprint("Test is running (" + str(elapsedtime) + " seconds have elapsed)...")
             time.sleep(1)    
+            elapsedtime += 1
 
         return
 
@@ -640,6 +742,9 @@ class StcGen:
     def resultsClear(self):
         """Clears all statistics.        
         """
+
+        logging.info("Executing resultsClear: " + str(locals()))
+
         self.stc.perform("ResultsClearAll")
         return         
 
@@ -665,6 +770,8 @@ class StcGen:
             The StreamBlock object handle.
 
         """
+        logging.info("Executing createStreamBlock: " + str(locals()))
+
         if not parametersdict:
             # This may seem a bit odd, but we don't want to initialize the parametersdict this way in the function header. 
             parametersdict = {}
@@ -691,7 +798,7 @@ class StcGen:
         return streamblock 
 
     #==============================================================================
-    def createDevice(self, port, name, parametersdict=""):
+    def createDevice(self, port, name, parametersdict=None):
         """Create an Emulated Device object.
 
         Parameters
@@ -709,6 +816,11 @@ class StcGen:
             The device object handle.
 
         """ 
+
+        logging.info("Executing createDevice: " + str(locals()))
+
+        if not parametersdict:
+            parametersdict = {}
 
         if "Encapsulation" in parametersdict.keys():
             # Valid Encapsulations are: IPv4, IPv6 and IPv4v6.
@@ -758,7 +870,7 @@ class StcGen:
         return device
 
     #==============================================================================
-    def createModifier(self, streamblock, modifiertype, parametersdict=""): 
+    def createModifier(self, streamblock, modifiertype, parametersdict=None): 
         """Create a StreamBlock modifier object.
 
         Parameters
@@ -777,6 +889,11 @@ class StcGen:
 
         """ 
 
+        logging.info("Executing createModifier: " + str(locals()))
+
+        if not parametersdict:
+            parametersdict = {}        
+
         # Modifiers are very "picky".
         # The modifier object's attributes are case sensitive, you the user
         # must enter the correct field, or the modifier will not work.
@@ -785,7 +902,9 @@ class StcGen:
             field = parametersdict["Field"]
             del parametersdict["Field"]
         else:
-            raise Exception("You must specify the field attribute for a modifier.")
+            errmsg = "You must specify the field attribute for a modifier."
+            logging.error(errmsg)
+            raise Exception(errmsg)
 
         # Now, like we did for PDU headers, we must translate.
         field = self.__modifyPDUKey(field)
@@ -824,6 +943,8 @@ class StcGen:
         
         """
 
+        logging.info("Executing connectAndApply: " + str(locals()))
+
         offlineports = []
         for port in self.stc.get(self.project, "children-port").split():
             online = self.stc.get(port, "Online")
@@ -831,6 +952,7 @@ class StcGen:
                 offlineports.append(port)
 
         if len(offlineports) > 0:
+            self.__lprint("Connecting to the hardware...")
             self.stc.perform("AttachPorts", portList=" ".join(offlineports),
                                             autoConnect=True,
                                             RevokeOwner=revokeowner)
@@ -858,6 +980,8 @@ class StcGen:
 
         """
 
+        logging.info("Executing relocatePort: " + str(locals()))
+
         # Find the specified port. This needs to be called BEFORE connecting to the
         # hardware.
         found = False
@@ -884,6 +1008,8 @@ class StcGen:
 
         """
 
+        logging.info("Executing isTrafficRunning: " + str(locals()))
+
         running = False
         for port in self.stc.get(self.project, "children-port").split():            
             if self.stc.get(port + ".generator", "State") != "STOPPED":
@@ -893,7 +1019,7 @@ class StcGen:
         return(running)
 
     #==============================================================================
-    def saveResultsDb(self, filename, deletetemp=True): 
+    def saveResultsDb(self, filename): 
         """Saves the results to a SQLite database 
 
         Parameters
@@ -910,6 +1036,8 @@ class StcGen:
             The fully normalized filename of the saved results database.
 
         """
+
+        logging.info("Executing saveResultsDb: " + str(locals()))
 
         filename = os.path.abspath(filename)
 
@@ -934,12 +1062,11 @@ class StcGen:
             # from there to the desired location on the local client.
             # First, copy all of the files from the Lab Server, and then copy the specific
             # database file to the desired target location.
-            # Delete the temporary directory afterward.
             
-            # Do the following in a temporary directory. This will allow us to clean
+            # Do the following in the temporary log directory. This will allow us to clean
             # up all of the extra files (logs and stuff) when we are done.
             originalpath = os.getcwd()
-            temppath = ".stcgen_results_temp"
+            temppath = self.logpath
 
             try:
                 # Determine the sourcefilename BEFORE changing directories. It looks like 
@@ -982,19 +1109,17 @@ class StcGen:
 
                 else:
                     # Something went wrong. Spare the temporary results directory for debugging.
-                    raise Exception("Unable to locate the results DB file '" + filename + "' (" + sourcefilename + ").")                
+                    errmsg = "Unable to locate the results DB file '" + filename + "' (" + sourcefilename + ")."
+                    logging.error(errmsg)
+                    raise Exception(errmsg)                
 
-            except Exception as ex:                
+            except Exception as errmsg:                
                 filename = None
-                print("WARNING: Something went wrong while downloading the results DB.")
-                print(ex)
+                errmsg = "WARNING: Something went wrong while downloading the results DB."
+                self.__lprint(errmsg)
                 pass
 
             os.chdir(originalpath)
-
-            if deletetemp:
-                # Delete the temporary results directory.                        
-                self.__rmtree(temppath)
 
         return filename
 
@@ -1096,6 +1221,8 @@ class StcGen:
               'StreamBlock.FrameConfig.ipv4:IPv4.1.tosDiffserv.tos' 
 
         """
+
+        logging.info("Executing getResultsDictFromDb: " + str(locals()))
         
         conn = sqlite3.connect(resultsdatabase)
         db = conn.cursor()
@@ -1266,7 +1393,9 @@ class StcGen:
                 else:
                     # We don't support other modes. 
                     # You COULD ignore this error, but all rate calculations would be incorrect.
-                    raise ValueError("WARNING: " + str(portconfig[txport]['mode']) + " scheduling is not supported. Rate calculations will be incorrect.")
+                    errmsg = "ERROR: " + str(portconfig[txport]['mode']) + " scheduling is not supported. Rate calculations will be incorrect."
+                    logging.error(errmsg)
+                    raise ValueError(errmsg)
             else:
                 # Pull the Tx rate directly from the Tx stream results (data-mining).
                 txduration  = results['Tx Frames'] / results['StreamBlock.Rate.Fps']
@@ -1366,7 +1495,8 @@ class StcGen:
                 if sb in resultsdict and key in resultsdict[sb] and rxportname in resultsdict[sb][key]:
                     # This case should not occur. If it does, we may need to reconsider the (supposedly) unique 
                     # dictionary keys (streamblock:key:rxportname) that we are using.
-                    print("WARNING: The flow " + sb + ":" + key + ":" + rxportname + " already exists. The results may be missing an entry.")
+                    errmsg = "WARNING: The flow " + sb + ":" + key + ":" + rxportname + " already exists. The results may be missing an entry."
+                    self.__lprint(errmsg)
                 
                 resultsdict[sb][key] = defaultdict(dict)
                 resultsdict[sb][key][rxportname] = flowresult
@@ -1471,7 +1601,9 @@ class StcGen:
 
                     resultsdict[sb][rxportname]['FlowCount'] += 1                
             else:
-                raise Exception("The results mode '" + mode + "' is invalid.")
+                errmsg = "The results mode '" + mode + "' is invalid."
+                logging.error(errmsg)
+                raise Exception(errmsg)
 
         # Lastly, we need to calculate averages, correct Tx counts for Rx flows belonging to the same stream, as well as clean up some labels.
         # Keep a list of all Rx (analyzer) filters.
@@ -1819,6 +1951,8 @@ class StcGen:
                 'VlanFrameRate'                          
 
         """
+
+        logging.info("Executing getPortResultsDictFromDb: " + str(locals()))
         
         conn = sqlite3.connect(resultsdatabase)
         db = conn.cursor()
@@ -1866,7 +2000,7 @@ class StcGen:
             portname = portinfo[portobject]['Name']            
 
             if portname in resultsdict.keys():
-                print("WARNING: There appears to be a duplicate port name '" + portname + "'. The results will be impacted.")
+                self.__lprint("WARNING: There appears to be a duplicate port name '" + portname + "'. The results will be impacted.")
 
             resultsdict[portname] = defaultdict(dict)
 
@@ -1917,7 +2051,7 @@ class StcGen:
         return(resultsdict)        
 
     #==============================================================================
-    def generateCsv(self, resultsdb, prefix=""):
+    def generateCsv(self, resultsdb, prefix=None):
         """Generate a plain-text CSV file from the specified results database.
 
         The CSV file will be generated in the same directory as the results database.
@@ -1926,10 +2060,15 @@ class StcGen:
         ----------
         resultsdb : str
             The filename of the source results database.
-        prefix: 
+        prefix: str
             An optional prefix to add to the CSV results filename.
 
         """
+
+        logging.info("Executing generateCsv: " + str(locals()))
+
+        if not prefix:
+            prefix = ""
 
         # Create some CSV files in the same directory as the results DB.
         path = os.path.dirname(resultsdb)
@@ -1966,6 +2105,26 @@ class StcGen:
         return            
 
     #==============================================================================
+    def cleanUpSession(self):        
+        """Terminates the current Lab Server session. This is really only necessary when using the REST API. 
+        """
+        if self.labserverip:
+            self.stc.perform("CsTestSessionDisconnect", Terminate=True)
+
+        return
+
+    #==============================================================================
+    def cleanupTempDirectory(self):
+        """Clean up the temporary log directory.        
+        """
+
+        if self.cleanuponexit:
+            # Delete temporary session directory.
+            self.__rmtree(self.logpath)
+               
+        return        
+
+    #==============================================================================
     #
     #   Private Methods
     #
@@ -1979,9 +2138,9 @@ class StcGen:
             with open(inputfilename) as json_file:
                 jsondict = json.load(json_file)
         except:
-            print("Unexpected error while parsing the JSON:", sys.exc_info()[1])
-            print()
-            raise
+            errmsg = "Unexpected error while parsing the JSON:", sys.exc_info()[1]
+            logging.error(errmsg)
+            raise Exception(errmsg)
 
         return jsondict
 
@@ -2059,7 +2218,7 @@ class StcGen:
                 # Keep track of all objects that are created. We need these for when
                 # we resolve "relations" later on.
                 if key in self.objects.keys():
-                    print("WARNING: Duplicate object name. The object '" + self.objects[key] + "' already has the name '" + key + "'.")
+                    self.__lprint("WARNING: Duplicate object name. The object '" + self.objects[key] + "' already has the name '" + key + "'.")
                 else:
                     self.objects[key] = object
             else:               
@@ -2119,7 +2278,9 @@ class StcGen:
                 for objectname in value:    
 
                     if objectname not in self.objects.keys():                            
-                        raise Exception("An error occurred while processing '" + attribute + "' = " + str(objectname) + "\nUnable to locate the object.")
+                        errmsg = "An error occurred while processing '" + attribute + "' = " + str(objectname) + "\nUnable to locate the object."
+                        logging.error(errmsg)
+                        raise Exception(errmsg)
                     else:                        
                         objectlist.append(self.objects[objectname])
                        
@@ -2149,8 +2310,10 @@ class StcGen:
 
             if not resultdict["foundmatch"]:
                 # Nope...something went wrong.                
+                errmsg = "An error occurred while processing '" + attribute + "' = " + str(value)
+                logging.error(errmsg)
                 #raise Exception("An error occurred while processing '" + attribute + "' = " + str(value) + "\n" + str(ex.args[2]))
-                raise Exception("An error occurred while processing '" + attribute + "' = " + str(value))
+                raise Exception(errmsg)
 
             # We can either use the DDN or the actual object. I'm just going with the DDN.
             object = resultdict["ddn"]
@@ -2447,6 +2610,7 @@ class StcGen:
            subdirectories and they do NOT need to be empty.
         """
 
+        print("Checking " + path)
         if os.path.isfile(path):
             os.remove(path)
         else:
@@ -2457,11 +2621,25 @@ class StcGen:
                         os.remove(file_path)
                     elif os.path.isdir(file_path): 
                         self.__rmtree(file_path)
-                except Exception as e:
-                    print(e)
+                except Exception as errmsg:                                        
+                    self.__lprint(errmsg)
+
 
             os.rmdir(path)
-        return        
+        return
+
+    #==============================================================================
+    def __lprint(self, message):
+        """Log the specified message. Print it to STDOUT if the verbose flag is set.
+        """
+
+        logging.info(message)
+
+        if self.verbose:
+            print(str(message))
+
+        return
+
     
 ###############################################################################
 ####
