@@ -1,6 +1,6 @@
 ###############################################################################
 #
-#           Spirent TestCenter Spitfire Traffic Generator Library
+#           Spirent TestCenter Stc_Gen Traffic Generator Library
 #                         by Spirent Communications
 #
 #   Date: November 28, 2017
