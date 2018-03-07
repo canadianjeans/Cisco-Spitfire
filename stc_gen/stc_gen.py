@@ -124,6 +124,8 @@ class StcGen:
             atexit.register(self.cleanupTempDirectory)
 
         self.verbose = verbose
+        self.cleanuponexit = cleanuponexit
+        self.labserverip = labserverip
 
         # Construct the log path.            
         defaultlogpath = "./StcGen_logs"
@@ -179,9 +181,7 @@ class StcGen:
 
         if not username:
             username = getpass.getuser()
-        
-        self.labserverip = labserverip
-
+                
         if userest:
             logging.info("Using the Python ReST adapter")
             from stcrestclient import stcpythonrest
@@ -197,14 +197,23 @@ class StcGen:
             from StcPython import StcPython
             self.stc = StcPython()  
 
-            if labserverip:                
-                logging.info("Using the Lab Server (" + labserverip + ") session " + sessionname + " - " + username)
-                self.stc.perform("CSTestSessionConnect", host=labserverip,
-                                                         TestSessionName=sessionname,
-                                                         OwnerId=username,
-                                                         CreateNewTestSession="True")    
+            if labserverip:       
 
-        self.cleanuponexit = cleanuponexit
+                if self.__doesSessionExist(testsessionname=sessionname, ownerid=username, action=existingsession) and existingsession.lower() == "join":
+                    logging.info("Joining the Lab Server (" + labserverip + ") session " + sessionname + " - " + username)
+                    self.stc.perform("CSTestSessionConnect", host=labserverip,
+                                                             TestSessionName=sessionname,
+                                                             OwnerId=username,
+                                                             CreateNewTestSession=False)    
+                else:
+                    logging.info("Creating the Lab Server (" + labserverip + ") session " + sessionname + " - " + username)
+                    self.stc.perform("CSTestSessionConnect", host=labserverip,
+                                                             TestSessionName=sessionname,
+                                                             OwnerId=username,
+                                                             CreateNewTestSession=True)    
+
+                # This instructs the Lab Server to terminate the session when the last client disconnects.
+                self.stc.perform("TerminateBll", TerminateType="ON_LAST_DISCONNECT")
 
         logging.info("Spirent TestCenter Version: " + self.stc.get("system1", "Version"))
         
@@ -2128,6 +2137,48 @@ class StcGen:
     #
     #   Private Methods
     #
+    #==============================================================================
+
+    def __doesSessionExist(self, testsessionname, ownerid, action):
+        """Allows the user to kill an existing Lab Server (if it exists). 
+
+           It is safe to call this method for sessions that don't exist.
+
+        Parameters
+        ----------
+        testsessionname : str
+            The name of the session (not the session ID).
+        ownerid: str
+            The username for the session.
+
+        Returns
+        -------
+        bool
+            True if the session already exists. False if it doesn't, or was killed 
+            by this method.
+
+        """
+        exists = False
+
+        self.stc.perform("CSServerConnect", host=self.labserverip)
+
+        for session in self.stc.get("system1.csserver", "children-CSTestSession").split():
+            if self.stc.get(session, "name") == testsessionname + " - " + ownerid:
+                # The session exists.
+                if action.lower() == "kill":
+                    # ...so kill it.
+                    self.stc.perform("CSStopTestSession", TestSession=session)
+                    self.stc.perform("CSDestroyTestSession", TestSession=session)
+                    break
+                else:
+                    exists = True
+                    break
+
+        self.stc.perform("CSServerDisconnect")
+
+        return(exists)
+
+
     #==============================================================================
     def __convertJsonToDict(self, inputfilename):        
 

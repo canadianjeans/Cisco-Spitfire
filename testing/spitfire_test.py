@@ -2,13 +2,16 @@ import sys
 import pprint
 import pdb
 
-sys.path.append('/Users/mjefferson/Projects/SET/Cisco - Spitfire/stc_gen')
+
+sys.path.append('Z:/Projects/SET/Cisco - Spitfire/stc_gen')
+sys.path.append('C:/Program Files (x86)/Spirent Communications/Spirent TestCenter 4.81/Spirent TestCenter Application/API/Python')
 import stc_gen
 
 pp = pprint.PrettyPrinter(indent=2)
 
-#stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.8.138", existingsession="join", terminateonexit=True)
-stcgen = stc_gen.StcGen(userest=True, labserverip="10.140.99.125", existingsession="join", cleanuponexit=False, verbose=True)
+#stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.8.138", existingsession="join")
+#stcgen = stc_gen.StcGen(userest=True, labserverip="10.140.99.125", existingsession="join", cleanuponexit=False, verbose=True)
+stcgen = stc_gen.StcGen(userest=False, labserverip="192.168.8.138", existingsession="kill")
     
 #stcgen.loadJson("sample_input.json")
 #stcgen.loadJson("IPv4_Unicast.json")
@@ -20,7 +23,7 @@ stcgen = stc_gen.StcGen(userest=True, labserverip="10.140.99.125", existingsessi
 #stcgen.loadJson("testingtests.json")
 #stcgen.loadJson("simple.json")
 
-stcgen.saveResultsDb("./resultstest/dummy.db")
+#stcgen.saveResultsDb("./resultstest/dummy.db")
 
 #results = stcgen.runAllTests()
 #pp.pprint(results)
@@ -35,11 +38,11 @@ stcgen.saveResultsDb("./resultstest/dummy.db")
 # results = stcgen.getResultsDictFromDb("./results/Test2_2018-02-22_15-18-28_100.db", mode="FLOW")
 # pp.pprint(results)
 
-#print("=========================================")
-#results = stcgen.getResultsDictFromDb("./results/Test2_2018-02-22_15-18-28_100.db", mode="STREAM")
-#pp.pprint(results)
 # print("=========================================")
-# results = stcgen.getResultsDictFromDb("./results/Test2_2018-02-22_15-18-28_100.db", mode="STREAMBLOCK")
+# results = stcgen.getResultsDictFromDb("./results/Test2_2018-02-23_12-42-38.db", mode="STREAM")
+# pp.pprint(results)
+# print("=========================================")
+# results = stcgen.getResultsDictFromDb("./results/Test2_2018-02-23_12-42-38.db", mode="STREAMBLOCK")
 # pp.pprint(results)
 
 
