@@ -413,8 +413,9 @@ class StcGen:
             One of these values: "SECONDS" or "BURSTS".
         LearningMode: str
             One of these values: "L2" or L3".
-        FrameLengths: List(int)
-            A list of frame lengths to execute the test for. Set to "-1"
+        FrameLengths: List(str)
+            A list of frame lengths to execute the test for. Set to "-1" to use the existing streamblock frame length.
+            A range of frame lengths may be specified with the starting, ending and step value (e.g. 128:1518+4).
         Loads: List(int)
             A list of loads to execute the test for.
         LoadUnit: str
@@ -480,6 +481,37 @@ class StcGen:
             framelengths = [-1]
         if not loads:
             loads = [-1]
+
+        # Search for any frame length ranges in the framelength list. If any are found, replace the range 
+        # with the actual frame length values.
+        newframelengths = []
+        for framelength in framelengths:
+            if type(framelength) is not int:
+
+                # This may be a frame length range (start:end+step)
+                if len(framelength.split(":")) == 2:
+                    start = framelength.split(":")[0]
+                    stop  = framelength.split(":")[1]
+                    step  = 1
+
+                    if len(stop.split("+")) == 2:
+                        step = stop.split("+")[1]
+                        stop = stop.split("+")[0]
+
+                    start = int(start)
+                    stop  = int(stop)
+                    step  = int(step)
+
+                    for iteration in range(start, stop + 1, step):
+                        newframelengths.append(iteration)
+                else:
+                    errmsg = "The framelength range " + str(framelength) + " does not appear to be valid. Please use the format <start>:<stop> or <start>:<stop>+<step>."
+                    logging.error(errmsg)
+                    raise Exception(errmsg)              
+            else:
+                newframelengths.append(framelength)
+
+        framelengths = newframelengths             
 
         iteration = 1
         for framelength in framelengths:
@@ -2328,13 +2360,36 @@ class StcGen:
                 objectlist = []
                 for objectname in value:    
 
-                    if objectname not in self.objects.keys():                            
+                    # The objectname may also include DDN notation (e.g. Device1.ipv4if(1)).
+                    # Only attempt to resolve the object name (Device1).
+                    match = re.search("\..+", objectname)
+
+                    if match:
+                        # Strip off the decendant notation. We'll add it back after.
+                        objectnameonly = objectname[:match.start()]
+                    else:
+                        objectnameonly = objectname
+
+                    if objectnameonly not in self.objects.keys():                            
                         errmsg = "An error occurred while processing '" + attribute + "' = " + str(objectname) + "\nUnable to locate the object."
                         logging.error(errmsg)
                         raise Exception(errmsg)
-                    else:                        
-                        objectlist.append(self.objects[objectname])
-                       
+                    else:                     
+
+                        objecthandle = self.objects[objectnameonly]   
+
+                        if match:
+                            # This command will raise an exception if the descendant object cannot be found. 
+                            name = self.stc.get(objecthandle + match.group(0), "Name")
+                            # Find the object handle of the referenced descendant.
+                            parent = self.stc.get(objecthandle + match.group(0), "Parent")
+                            for stcobject in self.stc.get(parent, "children").split():
+                                if name == self.stc.get(stcobject, "Name"):
+                                    objecthandle = stcobject
+                                    break
+
+                        objectlist.append(objecthandle)
+                 
                 # We should have a list of objects now.
                 if len(objectlist) > 0:
                     self.__config(object, attribute, " ".join(objectlist))

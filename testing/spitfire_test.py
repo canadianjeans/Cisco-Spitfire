@@ -5,19 +5,28 @@ import pdb
 
 sys.path.append('Z:/Projects/SET/Cisco - Spitfire/stc_gen')
 sys.path.append('C:/Program Files (x86)/Spirent Communications/Spirent TestCenter 4.81/Spirent TestCenter Application/API/Python')
+sys.path.append('../stc_gen')
 import stc_gen
 
 pp = pprint.PrettyPrinter(indent=2)
 
+print("Initializing...")
 #stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.8.138", existingsession="join")
 #stcgen = stc_gen.StcGen(userest=True, labserverip="10.140.99.125", existingsession="join", cleanuponexit=False, verbose=True)
-stcgen = stc_gen.StcGen(userest=False, labserverip="192.168.8.138", existingsession="kill")
+stcgen = stc_gen.StcGen(userest=True, labserverip="10.140.99.125", existingsession="join")
+#stcgen = stc_gen.StcGen(userest=False, labserverip="192.168.8.138", existingsession="kill")
     
+print("Loading the configuration...")
 #stcgen.loadJson("sample_input.json")
 #stcgen.loadJson("IPv4_Unicast.json")
 #stcgen.loadJson("fromtcc.json")
 #stcgen.loadJson("ping.json")
 #stcgen.loadJson("ping_one_port.json")
+stcgen.loadJson("bound_streamblock.json")
+
+#stcgen.connectAndApply()
+
+#pdb.set_trace()
 
 #stcgen.loadJson("everything.json")
 #stcgen.loadJson("testingtests.json")
@@ -26,6 +35,8 @@ stcgen = stc_gen.StcGen(userest=False, labserverip="192.168.8.138", existingsess
 #stcgen.saveResultsDb("./resultstest/dummy.db")
 
 #results = stcgen.runAllTests()
+
+#stcgen.runTest("Test1")
 #pp.pprint(results)
 
 #results = stcgen.getResultsDictFromDb("./results/Test2_2018-02-21_16-09-14_10_128.db", mode="STREAM")
