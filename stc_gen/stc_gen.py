@@ -2379,14 +2379,9 @@ class StcGen:
                         objecthandle = self.objects[objectnameonly]   
 
                         if match:
-                            # This command will raise an exception if the descendant object cannot be found. 
-                            name = self.stc.get(objecthandle + match.group(0), "Name")
-                            # Find the object handle of the referenced descendant.
-                            parent = self.stc.get(objecthandle + match.group(0), "Parent")
-                            for stcobject in self.stc.get(parent, "children").split():
-                                if name == self.stc.get(stcobject, "Name"):
-                                    objecthandle = stcobject
-                                    break
+                            # The DDN/DAN notation was used to specify a descendant of objecthandle. 
+                            # We need to find the object handle of the descendant object instead.
+                            objecthandle = self.stc.get(objecthandle + match.group(0), "Handle")                            
 
                         objectlist.append(objecthandle)
                  

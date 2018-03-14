@@ -11,9 +11,9 @@ import stc_gen
 pp = pprint.PrettyPrinter(indent=2)
 
 print("Initializing...")
-#stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.8.138", existingsession="join")
+stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.8.138", existingsession="join")
 #stcgen = stc_gen.StcGen(userest=True, labserverip="10.140.99.125", existingsession="join", cleanuponexit=False, verbose=True)
-stcgen = stc_gen.StcGen(userest=True, labserverip="10.140.99.125", existingsession="join")
+#stcgen = stc_gen.StcGen(userest=True, labserverip="10.140.99.125", existingsession="join")
 #stcgen = stc_gen.StcGen(userest=False, labserverip="192.168.8.138", existingsession="kill")
     
 print("Loading the configuration...")
