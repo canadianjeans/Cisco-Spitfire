@@ -72,8 +72,8 @@ from collections import defaultdict
 from netaddr import *
 
 
-#print("DEBUG: Using pprint!!")
-#import pprint
+# print("DEBUG: Using pprint!!")
+# import pprint
    
 ###############################################################################
 ####
@@ -1547,13 +1547,18 @@ class StcGen:
                 # Aggregate the flow results (per RxPort) for this stream or streamblock.
                 streamid = results['StreamId']
 
-                if streamid not in resultsdict[sb]:
+                if streamid not in resultsdict[sb].keys():
                     resultsdict[sb][streamid] = defaultdict(dict)
 
-                    # Create a new entry for this stream.
+                    # Create a new entry for this stream.                    
                     resultsdict[sb][streamid][rxportname] = flowresult 
                     resultsdict[sb][streamid][rxportname]['FlowCount'] = 1
+
+                elif rxportname not in resultsdict[sb][streamid].keys():
+                    resultsdict[sb][streamid][rxportname] = flowresult 
+                    resultsdict[sb][streamid][rxportname]['FlowCount'] = 1                                        
                 else:
+
                     resultsdict[sb][streamid][rxportname]['Tx Frames']           += flowresult['Tx Frames']
                     resultsdict[sb][streamid][rxportname]['Tx Bytes']            += flowresult['Tx Bytes']
                     resultsdict[sb][streamid][rxportname]['Rx Frames']           += flowresult['Rx Frames']
@@ -2381,6 +2386,8 @@ class StcGen:
                         if match:
                             # The DDN/DAN notation was used to specify a descendant of objecthandle. 
                             # We need to find the object handle of the descendant object instead.
+                            print(self.stc.get(objecthandle + match.group(0)))
+                            exit()
                             objecthandle = self.stc.get(objecthandle + match.group(0), "Handle")                            
 
                         objectlist.append(objecthandle)
