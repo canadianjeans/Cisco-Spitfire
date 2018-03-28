@@ -72,8 +72,8 @@ from collections import defaultdict
 from netaddr import *
 
 
-print("DEBUG: Using pprint!!")
-import pprint
+#print("DEBUG: Using pprint!!")
+#import pprint
    
 ###############################################################################
 ####
@@ -168,8 +168,8 @@ class StcGen:
         logging.basicConfig(format="%(asctime)s %(message)s")
         # The logger is now ready.        
 
-        print("DEBUG: Using PPRINT")
-        self.pp = pprint.PrettyPrinter(indent=2)
+        #print("DEBUG: Using PPRINT")
+        #self.pp = pprint.PrettyPrinter(indent=2)
 
         logging.info("Executing __init__: " + str(arguments))
 
