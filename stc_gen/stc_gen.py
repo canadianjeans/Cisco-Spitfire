@@ -72,8 +72,8 @@ from collections import defaultdict
 from netaddr import *
 
 
-# print("DEBUG: Using pprint!!")
-# import pprint
+print("DEBUG: Using pprint!!")
+import pprint
    
 ###############################################################################
 ####
@@ -168,8 +168,8 @@ class StcGen:
         logging.basicConfig(format="%(asctime)s %(message)s")
         # The logger is now ready.        
 
-        #print("DEBUG: Using PPRINT")
-        #self.pp = pprint.PrettyPrinter(indent=2)
+        print("DEBUG: Using PPRINT")
+        self.pp = pprint.PrettyPrinter(indent=2)
 
         logging.info("Executing __init__: " + str(arguments))
 
@@ -2386,8 +2386,6 @@ class StcGen:
                         if match:
                             # The DDN/DAN notation was used to specify a descendant of objecthandle. 
                             # We need to find the object handle of the descendant object instead.
-                            print(self.stc.get(objecthandle + match.group(0)))
-                            exit()
                             objecthandle = self.stc.get(objecthandle + match.group(0), "Handle")                            
 
                         objectlist.append(objecthandle)
@@ -2405,7 +2403,6 @@ class StcGen:
         # This is a replacement for the built-in Spirent TestCenter config command.
         # I've designed it this way to speed up execution. The "expensive" __findAttributes
         # method is only used if the attribute can't be found.
-            
         try:            
             # See if the build-in config function works.
             args = {attribute: value}
@@ -2415,6 +2412,8 @@ class StcGen:
             # Some error occurred. It may have been that the attribute wasn't found for the current
             # object. Check the descendant objects to see if one of them has the attribute.
             resultdict = self.__findAttribute(object, attribute)
+
+            #self.pp.pprint(resultdict)
 
             if not resultdict["foundmatch"]:
                 # Nope...something went wrong.                
@@ -2427,8 +2426,9 @@ class StcGen:
             object = resultdict["ddn"]
             attribute = resultdict["attribute"]
             args = {attribute: value}
-            self.stc.config(object, **args)
             #print(object + "." + attribute + " = " + str(value))
+            self.stc.config(object, **args)
+            
 
         return
     #==============================================================================
