@@ -2151,6 +2151,27 @@ class StcGen:
         return            
 
     #==============================================================================
+    def findObjectsByName(self, objecttype, objectname=""):
+        """Finds the specified object types and returns their handles.
+
+        Parameters
+        ----------
+        objecttype : str
+            The type of object.
+        objectname: str
+            Optional: The name of the object. If not specified, all objects of that type are returned.
+
+        """
+        if objectname == "*" or objectname == "":
+            result = self.stc.perform("GetObjects", ClassName=objecttype)        
+        else:
+            result = self.stc.perform("GetObjects", ClassName=objecttype, Condition="Name = " + objectname)        
+
+
+        return(result['ObjectList'])
+
+
+    #==============================================================================
     def cleanUpSession(self):        
         """Terminates the current Lab Server session. This is really only necessary when using the REST API. 
         """
