@@ -225,6 +225,8 @@ class StcGen:
         # The key is the object name so multiple objects with the same name is a problem.
         self.objects   = {}
 
+        self.project = self.stc.get("system1", "children-project")
+
         logging.info("The StcGen object has been initialized.")
 
         return
@@ -435,6 +437,9 @@ class StcGen:
         """ 
 
         logging.info("Executing runFixedDurationTest: " + str(locals()))
+
+        if not parametersdict:
+            parametersdict = {}        
 
         # Override the keyword arguments with the parametersdict settings.
         duration     = parametersdict.get("Duration",     Duration)
@@ -1306,8 +1311,7 @@ class StcGen:
             db.execute(query)
             portconfig[port]['streamcount'] = db.fetchone()[0]        
 
-        # Add the custom SQLite tables that make it easier to parse the results.
-        self.__addRxEotStreamCustomResultsTable(db, datasetid)
+        # Add the custom SQLite tables that make it easier to parse the results.        
         self.__addTxRxEotStreamCustomResultsTable(db, datasetid)
 
         # Create a dictionary with the API handles for all objects. This will allow us to convert DB object handles to API object handles.
@@ -1343,16 +1347,14 @@ class StcGen:
 
             # If the user has defined analyzer filters, which changes the hashing algorithm on the Rx port,
             # we need to determine how many Rx flows were created for that one stream on that Rx port.
-            # All of the Tx counts and rates will need to be divided by the number of flows generated.
+            # All of the Tx counts and rates will need to be divided by the number of flows generated.            
             if rxport != "N/A":
-                query = "SELECT count(StreamId) FROM TxRxEotStreamCustomResults WHERE RxPortHandle = " + str(rxport) + " AND StreamId = " + str(results['StreamId'])
-                db.execute(query)
-                for entry in db.fetchall():
-                    rxflowcount = entry[0]                
+                rxflowcount = results['RxFlowCount']
             else:
-                # There are actually no flows received on this port, but this rxflowcount is only
-                # used to correct the Tx count for more than one Rx flow.
                 rxflowcount = 1
+
+            # The user should not see this internal field.
+            results.pop('RxFlowCount', None)
 
             # Make corrections if there are multiple Rx flows per stream on this port.
             if 'StreamBlock.Rate.Fps' in results:
@@ -2553,92 +2555,20 @@ class StcGen:
         return     
 
     #==============================================================================
-    def __addRxEotStreamCustomResultsTable(self, db, datasetid):    
-        #
-        #   If the user has specified an analyzer filter, the human-readable results
-        #   are stored in the RxEotAnalyzerFilterValuesTable. To make things simple,
-        #   join this table with the RxEotStreamResults table.
-        #   The resulting table is RxEotStreamCustomResults.
-        #
-        # Arguments:
-        #   databasefilename - Name of the results database to be saved.
-        #   datasetid        - The datasetid to use when there are multiple datasets.
-        #
-        # Results:
-        #   N/A: Throws an exception on error.
-        
-
-        # Delete the table if it already exists. We need to create it every time, just in case additional
-        # data has been added to the database.
-        db.execute("DROP TABLE IF EXISTS RxEotStreamCustomResults")
-
-        query = "CREATE TABLE RxEotStreamCustomResults AS \
-                 SELECT \
-                   Rx.DataSetId, \
-                   Rx.PortName, \
-                   Rx.ParentHnd, \
-                   Rx.Comp32, \
-                   Rx.Comp16_1, \
-                   Rx.Comp16_2, \
-                   Rx.Comp16_3, \
-                   Rx.Comp16_4, \
-                   Rx.FrameCount, \
-                   Rx.OctetCount, \
-                   Rx.FirstArrivalTime, \
-                   Rx.LastArrivalTime, \
-                   Rx.AvgLatency, \
-                   Rx.MinLatency, \
-                   Rx.MaxLatency, \
-                   Rx.IsExpectedPort, \
-                   Rx.DuplicateFrameCount, \
-                   Filter.FilteredValue_1, \
-                   Filter.FilteredValue_2, \
-                   Filter.FilteredValue_3, \
-                   Filter.FilteredValue_4, \
-                   Filter.FilteredValue_5, \
-                   Filter.FilteredValue_6, \
-                   Filter.FilteredValue_7, \
-                   Filter.FilteredValue_8, \
-                   Filter.FilteredValue_9, \
-                   Filter.FilteredValue_10 \
-                 FROM \
-                   RxEotStreamResults AS Rx \
-                 LEFT JOIN \
-                   RxEotAnalyzerFilterValuesTable AS Filter \
-                 ON \
-                   Filter.DataSetId = " + str(datasetid) + "\
-                 AND \
-                   Rx.DataSetId = " + str(datasetid) + "\
-                 AND \
-                   Rx.Comp32 = Filter.Comp32 \
-                 AND \
-                   Rx.Comp16_1 = Filter.Comp16_1 \
-                 AND \
-                   Rx.Comp16_2 = Filter.Comp16_2 \
-                 AND \
-                   Rx.Comp16_3 = Filter.Comp16_3 \
-                 AND \
-                   Rx.Comp16_4 = Filter.Comp16_4"
-
-        # This command will create the table.
-        db.execute(query)
-        return
-
-    #==============================================================================
     def __addTxRxEotStreamCustomResultsTable(self, db, datasetid):
-        #   The database results files are missing an important table when they are
-        #   first saved to disk. Normally, the Results Reporter creates this table
-        #   when it opens the database, but that doesn't help us with the API.
-        #   Instead, this procedure will create the missing TxRxEotStreamResults table.
+        #   Use SQLite queries to build the result tables per flow. This will save
+        #   execution time verse trying to do everything in Python.
         #
         # Arguments:
-        #   databasefilename - Name of the results database to be saved.
-        #   datasetid        - The datasetid to use when there are multiple datasets.
+        #   db        - The database handle.
+        #   datasetid - The datasetid to use when there are multiple datasets.
         #
         # Results:
         #   N/A: Throws an exception on error.
 
-           
+        # First, we need to build some other tables.
+        self.__addRxEotStreamCustomResultsTable(db, datasetid)
+
         # Delete the table if it already exists. We need to create it every time, just in case additional
         # data has been added to the database.
         db.execute("DROP TABLE IF EXISTS TxRxEotStreamCustomResults")
@@ -2669,8 +2599,9 @@ class StcGen:
             Tx.OctetCount                                     AS 'Tx Bytes', \
             Tx.StreamBlockName                                AS 'StreamBlockName', \
             Tx.ParentStreamBlock                              AS 'ParentStreamBlock', \
-            COALESCE(Rx.PortName    ,'N/A')                   AS 'Rx Port', \
-            COALESCE(Rx.ParentHnd   ,'N/A')                   AS 'RxPortHandle', \
+            COALESCE(Rx.PortName            ,'N/A')           AS 'Rx Port', \
+            COALESCE(Rx.ParentHnd           ,'N/A')           AS 'RxPortHandle', \
+            COALESCE(Rx.FlowCount           ,0)               AS 'RxFlowCount', \
             COALESCE(Rx.Comp32              ,0)               AS 'StreamId', \
             COALESCE(Rx.Comp16_1            ,0)               AS 'Comp16_1', \
             COALESCE(Rx.Comp16_2            ,0)               AS 'Comp16_2', \
@@ -2713,6 +2644,124 @@ class StcGen:
 
         # This command will create the table.
         db.execute(query)
+        return
+
+    #==============================================================================
+    def __addRxEotStreamCustomResultsTable(self, db, datasetid):    
+        #
+        #   If the user has specified an analyzer filter, the human-readable results
+        #   are stored in the RxEotAnalyzerFilterValuesTable. To make things simple,
+        #   join this table with the RxEotStreamResults table.
+        #   The resulting table is RxEotStreamCustomResults.
+        #
+        # Arguments:
+        #   db        - The database handle.
+        #   datasetid - The datasetid to use when there are multiple datasets.
+        #
+        # Results:
+        #   N/A: Throws an exception on error.
+
+        # Calculate the number of flows per stream per Rx port.
+        self.__addRxEotFlowCountPerStreamTable(db, datasetid)        
+
+        # Delete the table if it already exists. We need to create it every time, just in case additional
+        # data has been added to the database.
+        db.execute("DROP TABLE IF EXISTS RxEotStreamCustomResults")
+
+        query = "CREATE TABLE RxEotStreamCustomResults AS \
+                 SELECT \
+                   Rx.DataSetId, \
+                   Rx.PortName, \
+                   Rx.ParentHnd, \
+                   Flow.FlowCount, \
+                   Rx.Comp32, \
+                   Rx.Comp16_1, \
+                   Rx.Comp16_2, \
+                   Rx.Comp16_3, \
+                   Rx.Comp16_4, \
+                   Rx.FrameCount, \
+                   Rx.OctetCount, \
+                   Rx.FirstArrivalTime, \
+                   Rx.LastArrivalTime, \
+                   Rx.AvgLatency, \
+                   Rx.MinLatency, \
+                   Rx.MaxLatency, \
+                   Rx.IsExpectedPort, \
+                   Rx.DuplicateFrameCount, \
+                   Filter.FilteredValue_1, \
+                   Filter.FilteredValue_2, \
+                   Filter.FilteredValue_3, \
+                   Filter.FilteredValue_4, \
+                   Filter.FilteredValue_5, \
+                   Filter.FilteredValue_6, \
+                   Filter.FilteredValue_7, \
+                   Filter.FilteredValue_8, \
+                   Filter.FilteredValue_9, \
+                   Filter.FilteredValue_10 \
+                 FROM \
+                   RxEotStreamResults AS Rx \
+                 LEFT JOIN \
+                   RxEotAnalyzerFilterValuesTable AS Filter \
+                 ON \
+                   Filter.DataSetId = " + str(datasetid) + "\
+                 AND \
+                   Rx.DataSetId = " + str(datasetid) + "\
+                 AND \
+                   Rx.Comp32 = Filter.Comp32 \
+                 AND \
+                   Rx.Comp16_1 = Filter.Comp16_1 \
+                 AND \
+                   Rx.Comp16_2 = Filter.Comp16_2 \
+                 AND \
+                   Rx.Comp16_3 = Filter.Comp16_3 \
+                 AND \
+                   Rx.Comp16_4 = Filter.Comp16_4 \
+                 LEFT JOIN \
+                   RxEotFlowCountPerStreamResults AS Flow \
+                 ON \
+                   Rx.DataSetId = " + str(datasetid) + "\
+                 AND \
+                   Rx.Comp32 = Flow.Comp32 \
+                 AND \
+                   Rx.ParentHnd = Flow.ParentHnd"                   
+
+        # This command will create the table.
+        db.execute(query)
+        return
+
+    #==============================================================================
+    def __addRxEotFlowCountPerStreamTable(self, db, datasetid):    
+
+        #   Add a table that contains the number of flows per StreamID per Rx port.   
+        #   This will allow us to speed up execution with large datasets.
+        #
+        # Arguments:
+        #   db        - The database handle.
+        #   datasetid - The datasetid to use when there are multiple datasets.
+        #
+        # Results:
+        #   N/A: Throws an exception on error.
+        
+        # Delete the table if it already exists. We need to create it every time, just in case additional
+        # data has been added to the database.
+        db.execute("DROP TABLE IF EXISTS RxEotFlowCountPerStreamResults")
+
+        # Create the RxEotFlowCountPerStreamResults table.
+        query = "CREATE TABLE RxEotFlowCountPerStreamResults AS \
+                 SELECT \
+                    DataSetId, \
+                    PortName, \
+                    ParentHnd, \
+                    Comp32, \
+                    Count(Comp32) AS 'FlowCount' \
+                 FROM \
+                    RxEotStreamResults \
+                 GROUP BY \
+                    Comp32, ParentHnd"
+
+        # This command will create the table.
+        db.execute(query)
+
         return
 
 
