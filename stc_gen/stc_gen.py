@@ -236,7 +236,7 @@ class StcGen:
     #   Public Methods
     #
     #==============================================================================
-    def loadJson(self, inputfilename, deleteExistingConfig=True):
+    def loadJson(self, inputfilename, deleteExistingConfig=False, autoDeleteDevices=True, autoDeleteStreamBlocks=True):
         """Parses the specifed JSON file and generates the corresponding Spirent TestCenter objects.
 
         Parameters
@@ -245,6 +245,10 @@ class StcGen:
             The name of the JSON input configuration file.
         deleteExistingConfig : bool
             Set to True to delete the existing project and create a new configuration.
+        autoDeleteDevices : bool
+            Set to False prevent the deletion of all existing EmulatedDevices.
+        autoDeleteStreamBlocks : bool
+            Set to False prevent the deletion of all existing StreamBlocks.
 
         """
 
@@ -260,6 +264,15 @@ class StcGen:
         if "Configuration" in inputdict.keys():
             # Loading a new configuration will reset the existing config.
             configdict = inputdict["Configuration"]
+
+            if (autoDeleteDevices or autoDeleteStreamBlocks) and "DeleteExisting" not in configdict.keys():
+                configdict["DeleteExisting"] = []
+
+            if autoDeleteDevices and "EmulatedDevice" not in configdict["DeleteExisting"]:
+                configdict["DeleteExisting"].append("EmulatedDevice")
+
+            if autoDeleteStreamBlocks and "StreamBlock" not in configdict["DeleteExisting"]:
+                configdict["DeleteExisting"].append("StreamBlock")                
 
             # Determine if the configuration is specified in a TCC file.
             if "ConfigFileName" in configdict.keys():
@@ -1065,6 +1078,19 @@ class StcGen:
         return(running)
 
     #==============================================================================
+    def saveConfiguration(self, filename): 
+        extension = "tcc"
+
+        if filename != "":
+            extension = filename.split(".")[-1].lower()
+
+        if extension == "xml":
+            self.stc.perform("SaveAsXml", filename=filename)
+        else:
+            self.stc.perform("SaveToTcc", filename=filename)      
+    
+
+    #==============================================================================
     def saveResultsDb(self, filename): 
         """Saves the results to a SQLite database 
 
@@ -1430,6 +1456,10 @@ class StcGen:
 
                 elif portconfig[txport]['mode'] == "PORT_BASED":                
                     # The rate is specified per port.
+
+                    # WARNING: I know this isn't working. The GeneratorConfig.FpsLoad field does NOT give you the correct value AND
+                    #          the streamcount doesn't take into account streamblocks that are inactive.
+
                     txduration  = results['Tx Frames'] * portconfig[txport]['streamcount'] / portconfig[txport]['fps']
                     txfps       = portconfig[txport]['fps'] / portconfig[txport]['streamcount']
 
@@ -2263,6 +2293,45 @@ class StcGen:
         if not parent:
             parent = self.project
 
+        if objectdict.get("DeleteExisting"):
+            # The user would like to delete existing objects.
+            # They can either specify specific objects by name, or they can specify object types.
+
+            itemlist = objectdict.get("DeleteExisting")
+
+            #objectattributes = objectdict.copy()
+            del objectdict["DeleteExisting"]
+
+            # Make sure item is a list.
+            if not isinstance(itemlist, list):
+                # Convert this string to a list.
+                itemlist = [itemlist]
+
+            for item in itemlist:
+                if item in self.objects.keys():
+                    # The item is referencing an object name. Delete this specific object.
+                    objecthandle = self.objects[item]
+                    self.stc.delete(objecthandle)                              
+                else:
+                    # Okay, so "item" is not an object name. Try treating it as an object type and
+                    # delete all objects of this type.
+                    childlist = self.stc.get(parent, "children-" + item).split()
+
+                    objecttype = self.stc.perform("GetObjectInfo", object=parent)["ObjectType"]
+
+                    if objecttype.lower() == "port" and (item.lower() == "emulateddevice" or item.lower() == "device" or item.lower() == "router" or item.lower() == "host"):
+                        # Add the relations as well.
+                        childlist += self.stc.get(parent, "AffiliationPort-Sources").split()
+                    
+                    for objecthandle in childlist:
+                        try:
+                            self.stc.delete(objecthandle)
+                        except Exception as ex:
+                            pass
+
+            # We need to purge the objects dictionary of all of the objects that were deleted.
+            self.__purgeObjects()
+
         # Iterate through each key.
         for key in sorted(objectdict.keys()):
             # A new object will contain a dictionary for the "value", and that
@@ -2314,6 +2383,10 @@ class StcGen:
                                 if re.search(objecttype, child, flags=re.I):                                    
                                     object = child
                                     break
+
+                        # Do not create new ports with duplicate names. Just reuse the existing port objects.
+                        if key in self.objects.keys() and objecttype.lower() == "port":
+                            object = self.objects[key]
 
                         if not object:
                             object = self.stc.create(objecttype, under=parent, name=key)
@@ -2419,7 +2492,25 @@ class StcGen:
 
         # Reset the relations dictionary.
         self.relations = {}
-        return              
+        return 
+
+    #==============================================================================
+    def __purgeObjects(self):
+        # Remove all entries from the objects dictionary that no longer exist.
+
+        # We need to make a copy of the objects dictionary in order to make this work.
+        objectscopy = self.objects.copy()
+
+        for objectname in objectscopy.keys():
+            objecthandle = self.objects[objectname]
+
+            try:
+                self.stc.get(objecthandle, "name")
+            except Exception as ex:
+                # The objecthandle is no longer valid so delete it from the objects dict.
+                del self.objects[objectname]
+
+        return
 
     #==============================================================================
     def __config(self, object, attribute, value):
