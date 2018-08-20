@@ -14,7 +14,19 @@
 #   in the same directory as the source code.
 #
 ###############################################################################
-
+#
+# Modification History
+# Version  Modified
+# 1.1.0    06/25/2018 by Matthew Jefferson
+#           -I've added this modification history.
+#           -Fixed an issue with the getResultsDictFromDb. Tx frame counts were
+#            not being calculated correctly.
+#           -Added the waitForLinkUp method.
+#           -Added the waitForArpNdSuccess method.
+#
+# 1.0.0    01/01/2018 by Matthew Jefferson
+#           -The initial release of the code.
+#
 ###############################################################################
 # Copyright (c) 2017 SPIRENT COMMUNICATIONS OF CALABASAS, INC.
 # All Rights Reserved
@@ -349,6 +361,9 @@ class StcGen:
 
         self.connectAndApply()   
 
+        # An exception will be generated if the links do not come up.
+        self.waitForLinkUp()
+
         results = {}
 
         # First, make sure none of the tests are "continuous"
@@ -489,7 +504,10 @@ class StcGen:
 
         self.stc.apply()
 
-        self.trafficLearn(learning)
+        if learning.upper() == "L3":
+            self.waitForArpNdSuccess()
+        else:
+            self.trafficLearn(learning)
 
         self.__lprint("Starting devices...")
         self.stc.perform("DevicesStartAll")
@@ -758,6 +776,8 @@ class StcGen:
 
         logging.info("Executing trafficLearn: " + str(locals()))
 
+        passed = True
+
         if learningmode.upper() == "L2":
             self.stc.perform("ArpNdStartOnAllDevices")
             self.stc.perform("L2LearningStart")
@@ -765,7 +785,16 @@ class StcGen:
             self.stc.perform("ArpNdStartOnAllDevices")
             self.stc.perform("ArpNdStartOnAllStreamBlocks") 
 
-        return   
+            #for port in self.stc.get("system1.project", "children-port").split():
+            #    print(self.stc.get(port + ".ArpNdReport"))
+            #    print(self.stc.get(port + ".ArpCache"))
+
+            result = self.stc.perform("ArpNdVerifyResolved")
+
+            if result["PassFailState"] != "PASSED":
+                passed = False
+
+        return(passed)
 
     #==============================================================================
     def trafficWaitUntilDone(self):
@@ -1078,6 +1107,81 @@ class StcGen:
         return(running)
 
     #==============================================================================
+    def waitForLinkUp(self, portnamelist=None, timeout=60): 
+        """Block execution until all links are up. An exception is generated if the 
+           links are not up by the specified timeout.
+
+        Parameters
+        ----------
+        portnamelist : list of str
+            A list of ports to check for link up. All ports by default.
+
+        timeout : int
+            The maximum time to wait for links up before generating an exception.
+
+        """
+
+        logging.info("Executing waitForLinkUp: " + str(locals()))   
+
+        if not portnamelist:
+             portnamelist = self.stc.get(self.project, "children-port").split()   
+
+        portlist = []
+
+        for portname in portnamelist:
+            handle = self.findObjectsByName(objecttype="port", objectname=portname)    
+            if handle != "":
+                portlist.append(handle)
+            else:
+                # Just assume that the portname is actually a port handle.
+                portlist.append(portname)
+        
+        stop = False
+        elapsedtime = 0
+        while not stop:
+            stop = True
+            for port in portlist:
+                result = self.stc.perform("PortSetupGetActivePhy", Port=port)
+                phy = result['ActivePhy']
+                linkstatus = self.stc.get(phy, "LinkStatus")
+                
+                if linkstatus.upper() != "UP":
+                    stop = False
+                    break
+
+            elapsedtime += 1
+
+            if elapsedtime > timeout:
+                errmsg = "A timeout occurred while waiting for interface links to come up (" + str(elapsedtime) + " seconds)."
+                logging.error(errmsg)
+                raise Exception(errmsg)
+            elif stop == False:
+                time.sleep(1)
+
+        return     
+
+    #==============================================================================
+    def waitForArpNdSuccess(self, timeout=60):       
+        
+        stop = False
+        start = datetime.datetime.now()
+        while not stop:
+            stop = True
+
+            if not self.trafficLearn("L3"):                
+                stop = False
+
+            delta = datetime.datetime.now() - start
+            elapsedtime = int(delta / datetime.timedelta(seconds=1))
+
+            if not stop and elapsedtime > timeout:
+                errmsg = "A timeout occurred while waiting for ARP/ND to be resolved (" + str(elapsedtime) + " seconds)."
+                logging.error(errmsg)
+                raise Exception(errmsg)
+
+        return
+
+    #==============================================================================
     def saveConfiguration(self, filename): 
         extension = "tcc"
 
@@ -1087,7 +1191,11 @@ class StcGen:
         if extension == "xml":
             self.stc.perform("SaveAsXml", filename=filename)
         else:
-            self.stc.perform("SaveToTcc", filename=filename)      
+            self.stc.perform("SaveToTcc", filename=filename)   
+
+        self.stc.perform("cssynchronizefiles")
+
+        return   
     
 
     #==============================================================================
@@ -2731,7 +2839,9 @@ class StcGen:
                     AND \
                       Rx.DataSetId = " + str(datasetid) + "\
                     AND \
-                      Tx.StreamId = Rx.Comp32"
+                      Tx.StreamId = Rx.Comp32 \
+                    WHERE \
+                      Tx.DataSetId = " + str(datasetid)
 
         # This command will create the table.
         db.execute(query)
@@ -2814,7 +2924,9 @@ class StcGen:
                  AND \
                    Rx.Comp32 = Flow.Comp32 \
                  AND \
-                   Rx.ParentHnd = Flow.ParentHnd"                   
+                   Rx.ParentHnd = Flow.ParentHnd \
+                 WHERE \
+                   Rx.DataSetId = " + str(datasetid)                   
 
         # This command will create the table.
         db.execute(query)
@@ -2847,6 +2959,8 @@ class StcGen:
                     Count(Comp32) AS 'FlowCount' \
                  FROM \
                     RxEotStreamResults \
+                 WHERE \
+                    DataSetId = " + str(datasetid) + "\
                  GROUP BY \
                     Comp32, ParentHnd"
 
