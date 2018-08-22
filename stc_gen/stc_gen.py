@@ -17,7 +17,18 @@
 #
 # Modification History
 # Version  Modified
-# 1.1.0    06/25/2018 by Matthew Jefferson
+# 1.2.0    08/22/2018 by Matthew Jefferson
+#           -This is a substantial revision.
+#           -Added linkUp, arpNdSuccess, archiveDirectory, setFrameLength and getObject.
+#           -Modified the connectAndApply command to allow it to block until
+#            links are up and ARP/ND is successful.
+#           -runFixedDurationTest can now be run without learning.
+#           -Default log path is now /tmp/StcGen_logs.
+#           -The library can now connect to an existing session and reuse the 
+#            existing configuration.
+#           -Removed the findObjectsByName method. This has been replaced by getObject.
+#
+# 1.1.0    08/17/2018 by Matthew Jefferson
 #           -I've added this modification history.
 #           -Fixed an issue with the getResultsDictFromDb. Tx frame counts were
 #            not being calculated correctly.
@@ -139,8 +150,8 @@ class StcGen:
         self.cleanuponexit = cleanuponexit
         self.labserverip = labserverip
 
-        # Construct the log path.            
-        defaultlogpath = "./StcGen_logs"
+        # Construct the log path. The default location is in /tmp.            
+        defaultlogpath = "/tmp/StcGen_logs"
 
         now = datetime.datetime.now()
         tempdir = now.strftime("%Y-%m-%d-%H-%M-%S")
@@ -235,11 +246,15 @@ class StcGen:
 
         # This dictionary keeps track of all objects that we have created. 
         # The key is the object name so multiple objects with the same name is a problem.
-        self.objects   = {}
+        self.objects = {}
+        self.__populateObjectsDict()
+
+        #self.pp.pprint(self.objects)
 
         self.project = self.stc.get("system1", "children-project")
 
         logging.info("The StcGen object has been initialized.")
+                
 
         return
 
@@ -248,7 +263,7 @@ class StcGen:
     #   Public Methods
     #
     #==============================================================================
-    def loadJson(self, inputfilename, deleteExistingConfig=False, autoDeleteDevices=True, autoDeleteStreamBlocks=True):
+    def loadJson(self, inputfilename, deleteExistingConfig=False, autoDeleteDevices=False, autoDeleteStreamBlocks=True):
         """Parses the specifed JSON file and generates the corresponding Spirent TestCenter objects.
 
         Parameters
@@ -442,7 +457,7 @@ class StcGen:
         DurationMode: str
             One of these values: "SECONDS" or "BURSTS".
         LearningMode: str
-            One of these values: "L2" or L3".
+            One of these values: "None", "L2" or L3".
         FrameLengths: List(str)
             A list of frame lengths to execute the test for. Set to "-1" to use the existing streamblock frame length.
             A range of frame lengths may be specified with the starting, ending and step value (e.g. 128:1518+4).
@@ -472,7 +487,7 @@ class StcGen:
         # Override the keyword arguments with the parametersdict settings.
         duration     = parametersdict.get("Duration",     Duration)
         durationmode = parametersdict.get("DurationMode", DurationMode)
-        learning     = parametersdict.get("LearningMode", LearningMode)  
+        learning     = parametersdict.get("LearningMode", LearningMode).upper()
         framelengths = parametersdict.get("FrameLengths", FrameLengths)      
         loads        = parametersdict.get("Loads",        Loads)
         loadunit     = parametersdict.get("LoadUnit",     LoadUnit)
@@ -504,10 +519,20 @@ class StcGen:
 
         self.stc.apply()
 
-        if learning.upper() == "L3":
-            self.waitForArpNdSuccess()
-        else:
-            self.trafficLearn(learning)
+        if not self.linksUp(ignoreportswithouttraffic=True):
+            errmsg = "Some port links appear to be down. Aborting test..."
+            logging.error(errmsg)
+            raise Exception(errmsg)              
+    
+        if learning == "L3":
+            self.trafficLearn("L3")
+        elif learning == "L2":
+            self.trafficLearn("L2")
+
+        if not self.arpNdSuccess(self): 
+            errmsg = "ARP/ND appears to have failed. Aborting test..."
+            logging.error(errmsg)
+            raise Exception(errmsg)                      
 
         self.__lprint("Starting devices...")
         self.stc.perform("DevicesStartAll")
@@ -578,9 +603,7 @@ class StcGen:
                     extension = ".".join(filename.split(".")[1:])
                     currentfilename = os.path.join(path, basename + "." + extension)
 
-                    for port in portlist:
-                        for streamblock in self.stc.get(port, "children-streamblock").split():
-                            self.stc.config(streamblock, FixedFrameLength=framelength)
+                    self.setFrameLength(framelength)
 
                 self.stc.apply()
 
@@ -1021,13 +1044,40 @@ class StcGen:
         return modifier
 
     #==============================================================================
-    def connectAndApply(self, revokeowner=False):
+    def setFrameLength(self, framelength):
+        """Set the frame length for all streamblocks.
+
+        Parameters
+        ----------
+        framelength : int
+            The length of the frame in bytes (includes FCS).
+        
+        """
+
+        for port in self.stc.get("system1.project", "children-port").split():
+            for streamblock in self.stc.get(port, "children-streamblock").split():
+                self.stc.config(streamblock, FixedFrameLength=framelength)  
+
+        return
+
+    #==============================================================================
+    def connectAndApply(self, revokeowner=False, waitforlinkup=60, waitforarpndsuccess=60):
         """Connect to the IL (hardware), reserve ports and apply the configuration.
 
         Parameters
         ----------
         revokeowner : bool
             Set to True to revoke any existing reservations.
+
+        waitforlinkup : int
+            The timeout value for links up. Set to a value greater than 0 to wait for links 
+            to be up before proceeding. If the links do not come up before the specified timeout 
+            value, an exception will be generated.
+
+        waitforarpndsuccess : int
+            The timeout value for successful ARP/ND resolution. Set to a value greater than 0 to 
+            wait for ARP/ND to be resolved before proceeding. If the ARP/ND is not resolved 
+            before the specified timeout value, an exception will be generated.            
         
         """
 
@@ -1045,6 +1095,14 @@ class StcGen:
                                             autoConnect=True,
                                             RevokeOwner=revokeowner)
         self.stc.apply()
+
+
+        if waitforlinkup > 0:
+            self.waitForLinkUp(timeout=waitforlinkup, ignoreportswithouttraffic=True)
+
+        if waitforarpndsuccess > 0:
+            self.waitForArpNdSuccess(timeout=waitforarpndsuccess)
+
         return
 
     #==============================================================================
@@ -1107,7 +1165,58 @@ class StcGen:
         return(running)
 
     #==============================================================================
-    def waitForLinkUp(self, portnamelist=None, timeout=60): 
+    def linksUp(self, portnamelist=None, ignoreportswithouttraffic=False): 
+        """Returns the link status for the specified ports.
+
+        Parameters
+        ----------
+        portnamelist : list of str
+            A list of ports to check for link up. All ports by default.
+
+        ignoreportswithouttraffic: bool
+            Set to True to only check those ports that are sending or receiving traffic.
+
+        Returns
+        -------
+        bool
+            Returns True if all specified port links are up. False otherwise.
+
+        """
+        logging.info("Executing linksUp: " + str(locals()))   
+
+        if not portnamelist:
+            if ignoreportswithouttraffic:
+                # Only check those ports that Tx or Rx traffic frames.
+                portnamelist = self.__getTrafficPorts()
+            else:
+                portnamelist = self.stc.get(self.project, "children-port").split()   
+
+        portlist = []
+
+        for portname in portnamelist:
+            handle = self.getObject(portname, objecttype="port")    
+            if handle:
+                portlist.append(handle)
+            else:
+                # Just assume that the portname is actually a port handle.
+                portlist.append(portname)
+
+        linksup = True
+
+        for port in portlist:
+            result = self.stc.perform("PortSetupGetActivePhy", Port=port)
+            phy = result['ActivePhy']
+            linkstatus = self.stc.get(phy, "LinkStatus")
+                
+            if linkstatus.upper() != "UP":
+                linksup = False
+                break
+
+        return(linksup)
+
+
+    #==============================================================================
+    def waitForLinkUp(self, portnamelist=None, timeout=60, ignoreportswithouttraffic=False): 
         """Block execution until all links are up. An exception is generated if the 
            links are not up by the specified timeout.
 
@@ -1119,35 +1228,19 @@ class StcGen:
         timeout : int
             The maximum time to wait for links up before generating an exception.
 
+        ignoreportswithouttraffic: bool
+            Set to True to only wait for those ports that transmit or receive traffic.
+
         """
 
         logging.info("Executing waitForLinkUp: " + str(locals()))   
-
-        if not portnamelist:
-             portnamelist = self.stc.get(self.project, "children-port").split()   
-
-        portlist = []
-
-        for portname in portnamelist:
-            handle = self.findObjectsByName(objecttype="port", objectname=portname)    
-            if handle != "":
-                portlist.append(handle)
-            else:
-                # Just assume that the portname is actually a port handle.
-                portlist.append(portname)
-        
+       
         stop = False
         elapsedtime = 0
         while not stop:
             stop = True
-            for port in portlist:
-                result = self.stc.perform("PortSetupGetActivePhy", Port=port)
-                phy = result['ActivePhy']
-                linkstatus = self.stc.get(phy, "LinkStatus")
-                
-                if linkstatus.upper() != "UP":
-                    stop = False
-                    break
+            if not self.linksUp(portnamelist, ignoreportswithouttraffic=ignoreportswithouttraffic):
+                stop = False
 
             elapsedtime += 1
 
@@ -1161,7 +1254,38 @@ class StcGen:
         return     
 
     #==============================================================================
+    def arpNdSuccess(self):         
+        """Returns the ARP/ND status (devices/streamblocks).
+
+        Returns
+        -------
+        bool
+            Returns True if ARP/ND is successful. False otherwise.
+
+        """
+        logging.info("Executing arpNdSuccess: " + str(locals()))   
+
+        result = self.stc.perform("ArpNdVerifyResolved")
+
+        passed = True
+        if result["PassFailState"] != "PASSED":
+            passed = False    
+
+        return(passed)
+
+    #==============================================================================
     def waitForArpNdSuccess(self, timeout=60):       
+        """Block execution until all ARP/ND is resolved. An exception is generated if the if a timeout occurs.
+
+        Parameters
+        ----------
+        portnamelist : list of str
+            A list of ports to check for ARP/ND completion.
+
+        timeout : int
+            The maximum time to wait for links up before generating an exception.
+
+        """        
         
         stop = False
         start = datetime.datetime.now()
@@ -1183,6 +1307,15 @@ class StcGen:
 
     #==============================================================================
     def saveConfiguration(self, filename): 
+        """Saves the current configuration to a TCC or XML file.
+
+        Parameters
+        ----------
+        filename : str
+            The filename of the database or XML file that will be saved.
+       
+        """
+
         extension = "tcc"
 
         if filename != "":
@@ -2290,26 +2423,86 @@ class StcGen:
                     fh.close()  # you can omit in most cases as the destructor will call it
         return            
 
+    # #==============================================================================
+    # def findObjectsByName(self, objecttype, objectname=""):
+    #     """Finds the specified object types and returns their handles.
+
+    #     Parameters
+    #     ----------
+    #     objecttype : str
+    #         The type of object.
+    #     objectname: str
+    #         Optional: The name of the object. If not specified, all objects of that type are returned.
+
+    #     """
+    #     if objectname == "*" or objectname == "":
+    #         result = self.stc.perform("GetObjects", ClassName=objecttype)        
+    #     else:
+    #         result = self.stc.perform("GetObjects", ClassName=objecttype, Condition="Name = " + objectname)        
+
+
+    #     return(result['ObjectList'])
+
     #==============================================================================
-    def findObjectsByName(self, objecttype, objectname=""):
-        """Finds the specified object types and returns their handles.
+    def getObject(self, name, objecttype=None):
+        """Returns the object handle for the corresponding object name.
+
+        If the name is not stored in the local "objects" dict, the API is searched.
+        Returns "None" if the object is not found.
 
         Parameters
         ----------
-        objecttype : str
-            The type of object.
         objectname: str
-            Optional: The name of the object. If not specified, all objects of that type are returned.
+            The name of the object.
+
+        objecttype : str
+            Optional: The type of object. If this is not specified, no attempt will be made
+            to search the API for the object. 
+
+        Returns
+        -------
+        str
+            Returns the object handle for the corresponding object, or None if not found.
 
         """
-        if objectname == "*" or objectname == "":
-            result = self.stc.perform("GetObjects", ClassName=objecttype)        
+
+        if name not in self.objects.keys():                            
+            # We didn't find the specified object in the dictionary. Search the API for it as well.
+            objecthandlelist = []
+            if objecttype:
+                result = self.stc.perform("GetObjects", ClassName=objecttype, Condition="Name = " + name)        
+                objecthandlelist = result['ObjectList'].split()
+
+            if len(objecthandlelist) > 1:
+                errmsg = "There is more than one object with the name '" + name + "'."
+                logging.error(errmsg)
+                raise Exception(errmsg)
+            elif len(objecthandlelist) == 0:
+                objecthandle = None
+            else:
+                self.objects[name] = objecthandlelist[0]
+                objecthandle = objecthandlelist[0]
         else:
-            result = self.stc.perform("GetObjects", ClassName=objecttype, Condition="Name = " + objectname)        
+            objecthandle = self.objects[name]
 
+        return(objecthandle)
 
-        return(result['ObjectList'])
+    #==============================================================================
+    def archiveDirectory(source):    
+        """Zip the specified directory.
+        
+        Parameters
+        ----------
+        source: str
+            The path to the directory that will be zipped.
 
+        """
+        archivename = shutil.make_archive(base_name=source, root_dir=source, format="zip")
+
+        # Remove the results directory.
+        #shutil.rmtree(source)    
+
+        return(archivename)        
 
     #==============================================================================
     def cleanUpSession(self):        
@@ -2394,6 +2587,65 @@ class StcGen:
         return jsondict
 
     #==============================================================================
+    def __populateObjectsDict(self):
+        # Populate the "objects" dictionary with existing object information.
+        # This is vital for ports, but I'm going to add devices and streamblocks
+        # as well (for performance).       
+
+        for port in self.stc.get("system1.project", "children-port").split():
+            self.stc.config(port, AppendLocationToPortName=False)
+
+            # If necessary, remore " (offline)" from the name.
+            name = self.stc.get(port, "name")
+            name = re.sub(r' \(offline\)', '', name)
+
+            self.objects[name] = port
+
+            for streamblock in self.stc.get(port, "children-streamblock").split():
+                name = self.stc.get(streamblock, "name")
+                self.objects[name] = streamblock
+
+        for device in self.stc.get("system1.project", "children-emulateddevice").split():
+            name = self.stc.get(device, "name")
+            self.objects[name] = device
+
+        # print(self.__getObject("Port1"))
+        # print(self.__getObject("Device 1"))
+
+
+        # This is a recursive method to discover all child objects of the initial
+        # object handle in the current BLL session. Their names and object handles 
+        # are stored in the variable "objects".
+
+        # if clearobjectsdict:
+        #     del self.objects
+        #     self.objects = {}
+
+        # if objecthandle != "":
+        #     name = self.stc.get(objecthandle, "name")
+
+        #     if name == "":
+        #         name = objecthandle
+        #         self.stc.config(objecthandle, name=name)
+
+        #     if re.match("port[0-9]+", objecthandle, flags=re.I):
+        #         # This is a port object. We need to remove some extra garbage from 
+        #         # the name.
+
+        #         # If present, remove " (offline)" from the name.                
+        #         name = re.sub(r' \(offline\)', '', name)
+
+        #     if name in self.objects.keys():
+        #         print("WARNING: the name " + name + " already exists.")
+
+        #     self.objects[name] = objecthandle
+
+        #     for child in self.stc.get(objecthandle, "children").split():
+        #         self.__populateObjectsDict(child, clearobjectsdict=False)
+
+        return
+
+    #==============================================================================
     def __addObject(self, objectdict, parent=None):   
         # This is a recursive method for parsing the JSON/Dictionary configuration
         # and translating it into Spirent TestCenter objects.
@@ -2416,18 +2668,23 @@ class StcGen:
                 itemlist = [itemlist]
 
             for item in itemlist:
-                if item in self.objects.keys():
+                item = item.lower()
+
+                objecthandle = self.getObject(item)                
+
+                if objecthandle:
                     # The item is referencing an object name. Delete this specific object.
-                    objecthandle = self.objects[item]
                     self.stc.delete(objecthandle)                              
                 else:
                     # Okay, so "item" is not an object name. Try treating it as an object type and
                     # delete all objects of this type.
-                    childlist = self.stc.get(parent, "children-" + item).split()
+                    #childlist = self.stc.get(parent, "children-" + item).split()
 
-                    objecttype = self.stc.perform("GetObjectInfo", object=parent)["ObjectType"]
+                    childlist = self.stc.perform("GetObjects", RootList=parent, ClassName=item)['ObjectList'].split()
 
-                    if objecttype.lower() == "port" and (item.lower() == "emulateddevice" or item.lower() == "device" or item.lower() == "router" or item.lower() == "host"):
+                    parentobjecttype = self.stc.perform("GetObjectInfo", object=parent)["ObjectType"].lower()
+
+                    if parentobjecttype == "port" and (item == "emulateddevice" or item == "device" or item == "router" or item == "host"):
                         # Add the relations as well.
                         childlist += self.stc.get(parent, "AffiliationPort-Sources").split()
                     
@@ -2494,10 +2751,14 @@ class StcGen:
 
                         # Do not create new ports with duplicate names. Just reuse the existing port objects.
                         if key in self.objects.keys() and objecttype.lower() == "port":
-                            object = self.objects[key]
+                            object = self.getObject(key)
 
                         if not object:
                             object = self.stc.create(objecttype, under=parent, name=key)
+
+                            if re.match("port[0-9]+", object, flags=re.I):
+                                # Port locations in name mess things up.
+                                self.stc.config(object, AppendLocationToPortName=False)
 
                     if objecttype.lower() == "bgpipv4routeconfig" or objecttype.lower() == "bgpipv6routeconfig":
                         # Add a sane default for the AS path.
@@ -2507,10 +2768,9 @@ class StcGen:
 
                     self.__addObject(objectattributes, object)
 
-                # Keep track of all objects that are created. We need these for when
-                # we resolve "relations" later on.
+                # Keep track of all objects that are created. We need these for when we resolve "relations" later on.
                 if key in self.objects.keys():
-                    self.__lprint("WARNING: Duplicate object name. The object '" + self.objects[key] + "' already has the name '" + key + "'.")
+                    self.__lprint("WARNING: Duplicate object name. The object '" + self.objects[key] + "' already exists.")
                 else:
                     self.objects[key] = object
             else:               
@@ -2741,6 +3001,99 @@ class StcGen:
                                 mBit=(value & 0x02) >> 1,
                                 reserved=(value & 0x01))
         return
+
+    #==============================================================================
+    def __getTrafficPorts(self): 
+        # Returns a list of port handles of ports that are either sending or receiving traffic.
+        portlist = []
+        for port in self.stc.get("system1.project", "children-port").split():
+            for streamblock in self.stc.get(port, "children-streamblock").split():
+                
+                #self.pp.pprint(self.stc.get(streamblock))
+                #print()
+
+                txports = []
+                rxports = []
+
+                # The Tx/Rx ports can be associated in several ways.
+                # The Src/Dst bindings can point to emulated device interfaces, network blocks for routes,
+                # network blocks for multicast groups, etc.
+                # Raw streamblocks can explicitly list the Rx ports.
+
+                srcbinding = self.stc.get(streamblock, "srcbinding").split()
+
+                if len(srcbinding) > 0:
+                    dstbinding = self.stc.get(streamblock, "dstbinding").split()
+
+                    txports = self.__findAssociatedPorts(srcbinding)
+                    rxports = self.__findAssociatedPorts(dstbinding)
+
+                else:                    
+                    # This is a raw streamblock.
+                    txports += self.stc.get(streamblock, "parent").split()
+                    rxports += self.stc.get(streamblock, "expectedrx-Targets").split()
+
+                for port in txports:
+                    if port not in portlist:
+                        portlist.append(port)
+
+                for port in rxports:
+                    if port not in portlist:
+                        portlist.append(port)
+
+        return(portlist)
+
+    #==============================================================================
+    def __findAssociatedPorts(self, objecthandlelist): 
+        # This is a "fun" method used to find out which ports are associated with the specified object.
+        # The specified object could be something like a device's interface or multicast group networkblock.
+        # Any port that is linked with that object will be returned.
+
+        portlist = []
+        devicelist = []
+
+        # The first step is to determine the EmulatedDevice associated with this object.
+        for objecthandle in objecthandlelist:
+            #device = self.stc.perform("GetObjects", RootList=objecthandle, ClassName="EmulatedDevice", Direction="Up")["ObjectList"]
+            device = self.__findDevice(objecthandle)
+            
+            if not device:
+                # This is probably a multicast group object. If it's not, we'll need to add some additional code
+                # to deal with that case.
+                parent = self.stc.get(objecthandle, "parent")
+                for associatedobject in self.stc.get(parent, "subscribedgroups-Sources").split():
+                    #device = self.stc.perform("GetObjects", RootList=associatedobject, ClassName="EmulatedDevice", Direction="UP")["ObjectList"]
+                    device = self.__findDevice(associatedobject)
+
+                    if device and device not in devicelist:
+                        devicelist.append(device)
+                    else:
+                        errmsg = "WARNING: Unable to find the associated port for the object '" + objecthandle + "'."
+                        self.__lprint(errmsg)                        
+            else:
+                if device not in devicelist:
+                    devicelist.append(device)
+        
+        # Now find all of the ports for these devices.        
+        for device in devicelist:
+            port = self.stc.get(device, "AffiliationPort-Targets")
+            if port != "" and port not in portlist:
+                portlist.append(port)
+
+        return(portlist)
+
+    #==============================================================================
+    def __findDevice(self, objecthandle): 
+        # This recursive method will search the ancestors objects of "objecthandle"
+        # looking for a device/router/host object.
+        parent = self.stc.get(objecthandle, "parent")
+
+        if re.match("project[0-9]+", parent, flags=re.I) or parent.lower() == "system1" or parent == "":
+            return(None)            
+        elif re.match("emulateddevice[0-9]+", parent, flags=re.I) or re.match("router[0-9]+", parent, flags=re.I) or re.match("host[0-9]+", parent, flags=re.I):
+            return(parent)
+        else:
+            return(self.__findDevice(parent))
 
     #==============================================================================
     def __enableDataMining(self, dataminingdict): 
