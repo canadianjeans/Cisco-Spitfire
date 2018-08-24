@@ -17,6 +17,10 @@
 #
 # Modification History
 # Version  Modified
+# 1.2.1    08/22/2018 by Matthew Jefferson
+#           -Added an stc.apply() to the loadJson method.
+#           -runFixedDurationTest now defaults to "None" for learning.
+#
 # 1.2.0    08/22/2018 by Matthew Jefferson
 #           -This is a substantial revision.
 #           -Added linkUp, arpNdSuccess, archiveDirectory, setFrameLength and getObject.
@@ -343,6 +347,8 @@ class StcGen:
 
         logging.info("Successfully loaded the JSON configuration.")
 
+        self.stc.apply()
+
         return
 
     #==============================================================================
@@ -377,7 +383,7 @@ class StcGen:
         self.connectAndApply()   
 
         # An exception will be generated if the links do not come up.
-        self.waitForLinkUp()
+        #self.waitForLinkUp()
 
         results = {}
 
@@ -440,7 +446,7 @@ class StcGen:
     def runFixedDurationTest(self, testname, 
                                    Duration       = 60,
                                    DurationMode   = "SECONDS",
-                                   LearningMode   = "L3",
+                                   LearningMode   = "None",
                                    FrameLengths   = None,
                                    Loads          = None,
                                    LoadUnit       = "PERCENT_LINE_RATE",
@@ -1266,6 +1272,9 @@ class StcGen:
         logging.info("Executing arpNdSuccess: " + str(locals()))   
 
         result = self.stc.perform("ArpNdVerifyResolved")
+
+        #print("DEBUG")
+        #self.pp.pprint(result)
 
         passed = True
         if result["PassFailState"] != "PASSED":
