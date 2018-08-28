@@ -17,6 +17,11 @@
 #
 # Modification History
 # Version  Modified
+# 1.2.2    08/28/2018 by Matthew Jefferson
+#           -Changed the python method used to move files. This should fix an issue
+#            moving files between file systems.
+#           -Now displaying the error message when downloading the results database.
+#
 # 1.2.1    08/22/2018 by Matthew Jefferson
 #           -Added an stc.apply() to the loadJson method.
 #           -runFixedDurationTest now defaults to "None" for learning.
@@ -91,6 +96,7 @@ import getpass
 import json
 import sqlite3
 import logging
+import shutil
 
 import atexit
 
@@ -535,7 +541,7 @@ class StcGen:
         elif learning == "L2":
             self.trafficLearn("L2")
 
-        if not self.arpNdSuccess(self): 
+        if not self.arpNdSuccess(): 
             errmsg = "ARP/ND appears to have failed. Aborting test..."
             logging.error(errmsg)
             raise Exception(errmsg)                      
@@ -1425,7 +1431,8 @@ class StcGen:
 
                 if os.path.isfile(sourcefilename):
                     # This is the move function.
-                    os.rename(sourcefilename, targetfilename)
+                    #os.rename(sourcefilename, targetfilename)
+                    shutil.move(sourcefilename, targetfilename)
 
                     filename = targetfilename
 
@@ -1437,13 +1444,13 @@ class StcGen:
 
             except Exception as errmsg:                
                 filename = None
-                errmsg = "WARNING: Something went wrong while downloading the results DB."
-                self.__lprint(errmsg)
+                erroroutput = "WARNING: Something went wrong while downloading the results DB.\n" + str(errmsg)
+                self.__lprint(erroroutput)
                 pass
 
             os.chdir(originalpath)
 
-        return filename
+        return(filename)
 
     #==============================================================================
     def getResultsDictFromDb(self, resultsdatabase, mode="FLOW", datasetid=None):
