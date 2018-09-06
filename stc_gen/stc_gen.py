@@ -17,6 +17,10 @@
 #
 # Modification History
 # Version  Modified
+# 1.3.1    09/06/2018 by Matthew Jefferson
+#           -Using a new internal download mechanism. This should improve the speed
+#            of downloading DB files when there is a large number of them.
+#
 # 1.3.0    09/06/2018 by Matthew Jefferson
 #           -New objects with the same name as an existing object now re-use the exiting
 #            object. This prevents duplicates from being created.
@@ -1449,7 +1453,10 @@ class StcGen:
             try:
                 # Determine the sourcefilename BEFORE changing directories. It looks like 
                 # there is some weirdness with the os.path.abspath() function.
-                sourcefilename = os.path.join(temppath, "stcgen_results", filename)                
+
+                labserverfilename = os.path.join("stcgen_results", filename)
+
+                sourcefilename = os.path.join(temppath, labserverfilename)                
                 sourcefilename = os.path.abspath(sourcefilename)
 
                 # Currently, the Python ReST adapter differs from the native Python API
@@ -1465,8 +1472,17 @@ class StcGen:
 
                 os.chdir(temppath)
 
+                # NOTE: We are no longer using this command because it becomes VERY slow when 
+                # there are a large number of DB files to download.
                 # Download all files from the Lab Server into the temporary directory.
-                self.stc.perform("cssynchronizefiles")
+                #self.stc.perform("cssynchronizefiles")
+
+                if labserverfilename in self.stc._stc.files():                    
+                    # The DB file is in the subdirectory.
+                    self.stc._stc.download(labserverfilename)
+                elif filename in self.stc._stc.files():           
+                    # It's in the root directory.         
+                    self.stc._stc.download(filename)                    
 
                 # Now move the DB file from the temporary directory and put it into 
                 # the specified directory (path).
@@ -3411,7 +3427,7 @@ class StcGen:
         """Delete the specified file or directory. This works for nested,
            subdirectories and they do NOT need to be empty.
         """
-                
+
         if os.path.isfile(path):
             os.remove(path)
         else:
