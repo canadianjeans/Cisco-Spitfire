@@ -17,6 +17,12 @@
 #
 # Modification History
 # Version  Modified
+# 1.3.0    09/06/2018 by Matthew Jefferson
+#           -New objects with the same name as an existing object now re-use the exiting
+#            object. This prevents duplicates from being created.
+#           -When using the runFixedDurationTest() method, result DB files are now
+#            either zipped or deleted after they are no longer needed.
+#
 # 1.2.2    08/28/2018 by Matthew Jefferson
 #           -Changed the python method used to move files. This should fix an issue
 #            moving files between file systems.
@@ -97,6 +103,8 @@ import json
 import sqlite3
 import logging
 import shutil
+import zipfile
+import ast
 
 import atexit
 
@@ -398,8 +406,8 @@ class StcGen:
             #testtype = self.testsdict[testname].get("Type","FixedDuration")
             results[testname] = self.runTest(testname, parametersdict=self.testsdict[testname].copy())
 
-        self.__lprint("Disconnecting from hardware...")
-        self.stc.perform("ChassisDisconnectAll")
+        #self.__lprint("Disconnecting from hardware...")
+        #self.stc.perform("ChassisDisconnectAll")
 
         return(results)
 
@@ -457,6 +465,7 @@ class StcGen:
                                    Loads          = None,
                                    LoadUnit       = "PERCENT_LINE_RATE",
                                    ResultModes    = ['ALL'],
+                                   DeleteResults  = True,
                                    parametersdict = None): 
         """Run a fixed duration test.        
         
@@ -480,6 +489,9 @@ class StcGen:
             "INTER_BURST_GAP", "BITS_PER_SECOND", "KILOBITS_PER_SECOND", "MEGABITS_PER_SECOND" or "L2_RATE".
         ResultModes: List(str)
             A list of result types that will be returned after the test: "ALL", "FLOW", "STREAM", "STREAMBLOCK", "PORT"
+        DeleteResults: bool
+            True: (default) The result DB files are deleted after they are added to the results dictionary. 
+            False: The result DB files are zipped after they are added to the results dictionary.
         parametersdict : dict
             A dictionary of test parameters. Users can use either the parametersdict or
             keyword arguments. parameterdict settings take precedence over keyword arguments.      
@@ -497,13 +509,16 @@ class StcGen:
             parametersdict = {}        
 
         # Override the keyword arguments with the parametersdict settings.
-        duration     = parametersdict.get("Duration",     Duration)
-        durationmode = parametersdict.get("DurationMode", DurationMode)
-        learning     = parametersdict.get("LearningMode", LearningMode).upper()
-        framelengths = parametersdict.get("FrameLengths", FrameLengths)      
-        loads        = parametersdict.get("Loads",        Loads)
-        loadunit     = parametersdict.get("LoadUnit",     LoadUnit)
-        resultmodes  = parametersdict.get("ResultModes",  ResultModes)
+        duration      = parametersdict.get("Duration",      Duration)
+        durationmode  = parametersdict.get("DurationMode",  DurationMode)
+        learning      = parametersdict.get("LearningMode",  LearningMode).upper()
+        framelengths  = parametersdict.get("FrameLengths",  FrameLengths)      
+        loads         = parametersdict.get("Loads",         Loads)
+        loadunit      = parametersdict.get("LoadUnit",      LoadUnit)
+        resultmodes   = parametersdict.get("ResultModes",   ResultModes)
+        deleteresults = parametersdict.get("DeleteResults", DeleteResults)
+
+        deleteresults = ast.literal_eval(deleteresults)
 
         # Create a timestamp for the result databases.
         now = datetime.datetime.now()
@@ -665,7 +680,16 @@ class StcGen:
 
                         if mode.upper() == "PORT" or mode.upper() == "ALL": 
                             results["Iterations"][iteration]["PortStats"] = self.getPortResultsDictFromDb(resultsfilename)
-                        
+
+                    if not deleteresults:                        
+                        # Zip the result DB file.                                 
+                        zipfilename = resultsfilename + ".zip"
+                        zipfh = zipfile.ZipFile(zipfilename, 'w')
+                        zipfh.write(resultsfilename, compress_type=zipfile.ZIP_DEFLATED)
+                        zipfh.close()
+
+                    # Delete the original result DB file.
+                    os.remove(resultsfilename)
 
                     #self.generateCsv(resultsfilename)
                 
@@ -782,6 +806,20 @@ class StcGen:
         """
 
         logging.info("Executing trafficStart: " + str(locals()))
+
+        #, checklinkstatus=True, checkarpndstatus=True
+
+        # if checklinkstatus:
+        #     print("ToDo: Add linksUp check here!!!!")
+        #     self.linksUp()
+
+        #     exception
+
+        # if checkarpndstatus:
+        #     print("ToDo: Add linksUp check here!!!!")
+        #     self.()
+
+        #     exception
 
         self.__lprint("Starting generators...")
         self.stc.perform("GeneratorStart")
@@ -913,8 +951,14 @@ class StcGen:
         elif headers:
             frameconfig = headers
 
-        streamblock = self.stc.create("StreamBlock", under=port, FrameConfig=frameconfig, Name=name)
-        self.stc.perform("StreamBlockUpdate", StreamBlock=streamblock)
+        if name in self.objects.keys():
+            self.__lprint("WARNING: Duplicate object name. The object '" + name + "' (" + self.objects[name] + ") already exists.")
+            streamblock = self.objects[name]
+        else:
+            streamblock = self.stc.create("StreamBlock", under=port, FrameConfig=frameconfig, Name=name)
+            self.stc.perform("StreamBlockUpdate", StreamBlock=streamblock)
+
+            self.objects[name] = streamblock
 
         self.__addObject(parametersdict, streamblock)
 
@@ -959,34 +1003,40 @@ class StcGen:
         else:
             vlancount = 0      
 
-        edp = self.stc.create("EmulatedDeviceGenParams", under=self.project,
-                                                         Port=port,
-                                                         Count=1,
-                                                         DeviceName=name,                                       
-                                                         BlockMode="ONE_DEVICE_PER_BLOCK")
+        if name in self.objects.keys():
+            self.__lprint("WARNING: Duplicate object name. The object '" + name + "' (" + self.objects[name] + ") already exists.")
+            device = self.objects[name]
+        else:
+            edp = self.stc.create("EmulatedDeviceGenParams", under=self.project,
+                                                             Port=port,
+                                                             Count=1,
+                                                             DeviceName=name,                                       
+                                                             BlockMode="ONE_DEVICE_PER_BLOCK")
 
-        ethparams = self.stc.create("DeviceGenEthIIIfParams", under=edp)
-        stackedon = ethparams
+            ethparams = self.stc.create("DeviceGenEthIIIfParams", under=edp)
+            stackedon = ethparams
 
-        if vlancount > 0:
-            # We don't need to set the "DeviceGenStackedOnIf" attribute. It will automatically be set correctly
-            # for stacked vlans.
-            for index in range(vlancount):
-                vlanparams = self.stc.create("DeviceGenVlanIfParams", under=edp, Count=1, RepeatMode="NO_REPEAT")
-            stackedon = vlanparams
+            if vlancount > 0:
+                # We don't need to set the "DeviceGenStackedOnIf" attribute. It will automatically be set correctly
+                # for stacked vlans.
+                for index in range(vlancount):
+                    vlanparams = self.stc.create("DeviceGenVlanIfParams", under=edp, Count=1, RepeatMode="NO_REPEAT")
+                stackedon = vlanparams
 
-        # We DO need to set the "DeviceGenStackedOnIf" attribute, otherwise, STC might not stack the IPv4/IPv6 
-        # interface correctly.
-        if encapsulation.lower() == "ipv4" or encapsulation.lower() == "ipv4v6":
-            self.stc.create("DeviceGenIpv4IfParams", under=edp, **{"DeviceGenStackedOnIf-targets" : stackedon}) 
+            # We DO need to set the "DeviceGenStackedOnIf" attribute, otherwise, STC might not stack the IPv4/IPv6 
+            # interface correctly.
+            if encapsulation.lower() == "ipv4" or encapsulation.lower() == "ipv4v6":
+                self.stc.create("DeviceGenIpv4IfParams", under=edp, **{"DeviceGenStackedOnIf-targets" : stackedon}) 
 
-        if encapsulation.lower() == "ipv6" or encapsulation.lower() == "ipv4v6":
-            self.stc.create("DeviceGenIpv6IfParams", under=edp, AddrType="NON_LINK_LOCAL", **{"DeviceGenStackedOnIf-targets" : stackedon})                                                                                    
-            self.stc.create("DeviceGenIpv6IfParams", under=edp, AddrType="LINK_LOCAL", UseEui64LinkLocalAddress=True, **{"DeviceGenStackedOnIf-targets" : stackedon})
+            if encapsulation.lower() == "ipv6" or encapsulation.lower() == "ipv4v6":
+                self.stc.create("DeviceGenIpv6IfParams", under=edp, AddrType="NON_LINK_LOCAL", **{"DeviceGenStackedOnIf-targets" : stackedon})                                                                                    
+                self.stc.create("DeviceGenIpv6IfParams", under=edp, AddrType="LINK_LOCAL", UseEui64LinkLocalAddress=True, **{"DeviceGenStackedOnIf-targets" : stackedon})
 
-        # Finally, execute the command that will create the emulated devices.
-        result = self.stc.perform("DeviceGenConfigExpand", DeleteExisting="No", GenParams=edp)
-        device = result["ReturnList"]
+            # Finally, execute the command that will create the emulated devices.
+            result = self.stc.perform("DeviceGenConfigExpand", DeleteExisting="No", GenParams=edp)
+            device = result["ReturnList"]
+
+            self.objects[name] = device
 
         self.__addObject(parametersdict, device)
 
@@ -1847,7 +1897,6 @@ class StcGen:
                     resultsdict[sb][streamid][rxportname] = flowresult 
                     resultsdict[sb][streamid][rxportname]['FlowCount'] = 1                                        
                 else:
-
                     resultsdict[sb][streamid][rxportname]['Tx Frames']           += flowresult['Tx Frames']
                     resultsdict[sb][streamid][rxportname]['Tx Bytes']            += flowresult['Tx Bytes']
                     resultsdict[sb][streamid][rxportname]['Rx Frames']           += flowresult['Rx Frames']
@@ -2719,7 +2768,8 @@ class StcGen:
             # dictionary will have the "ObjectType" key defined.
             objecttype = self.__getObjectType(key, objectdict[key])
 
-            if objecttype:                     
+            if objecttype:       
+
                 # We found a new object. Make a copy of the objectdict and delete the "ObjectType" key.
                 # If we don't make a copy of the dict, the "for" loop that we are in may fail.
                 objectattributes = objectdict[key].copy()
@@ -2741,14 +2791,13 @@ class StcGen:
                         object = result['ReturnList']    
 
                     else:
-
                         object = ""
 
                         # There is no need to create Dot1xEap***Config objects. They are created automatically
                         # when the Dot1xSupplicantBlockConfig (parent) attribute "EapAuthMethod" is configured.
                         if re.search("Dot1xEap.+Config$", objecttype, flags=re.I):
                             # Set the EapAuthMethod, which will create the object for us, and then search for the desired object.
-                            # Note that the user may ALSO set this attribute, however, it is not guarenteed to have
+                            # Note that the user may ALSO set this attribute, however, it is not guaranteed to have
                             # been processed before this point, so we need to manually figure it out.
 
                             # Find the EapAuthMethod Type.
@@ -2765,9 +2814,13 @@ class StcGen:
                                     object = child
                                     break
 
-                        # Do not create new ports with duplicate names. Just reuse the existing port objects.
-                        if key in self.objects.keys() and objecttype.lower() == "port":
-                            object = self.getObject(key)
+
+                        if key in self.objects.keys():
+
+                            # The object already exists. Don't create a duplicate.
+                            self.__lprint("WARNING: Duplicate object name. The object '" + key + "' (" + self.objects[key] + ") already exists.")
+
+                            object = self.objects[key]                            
 
                         if not object:
                             object = self.stc.create(objecttype, under=parent, name=key)
@@ -2780,15 +2833,12 @@ class StcGen:
                         # Add a sane default for the AS path.
                         router = self.stc.get(object, "parent")
                         asnum = self.stc.get(router, "AsNum")
-                        self.stc.config(object, AsPath=asnum)                        
+                        self.stc.config(object, AsPath=asnum) 
 
-                    self.__addObject(objectattributes, object)
+                    # Keep track of all objects that are created. We need these for when we resolve "relations" later on.
+                    self.objects[key] = object                       
 
-                # Keep track of all objects that are created. We need these for when we resolve "relations" later on.
-                if key in self.objects.keys():
-                    self.__lprint("WARNING: Duplicate object name. The object '" + self.objects[key] + "' already exists.")
-                else:
-                    self.objects[key] = object
+                    self.__addObject(objectattributes, object)                    
             else:               
 
                 attribute = key
@@ -2856,7 +2906,7 @@ class StcGen:
                         objectnameonly = objectname
 
                     if objectnameonly not in self.objects.keys():                            
-                        errmsg = "An error occurred while processing '" + attribute + "' = " + str(objectname) + "\nUnable to locate the object."
+                        errmsg = "An error occurred while processing '" + attribute + "' = '" + str(objectname) + "'\nUnable to locate the object."
                         logging.error(errmsg)
                         raise Exception(errmsg)
                     else:                     
@@ -3361,8 +3411,7 @@ class StcGen:
         """Delete the specified file or directory. This works for nested,
            subdirectories and they do NOT need to be empty.
         """
-
-        print("Checking " + path)
+                
         if os.path.isfile(path):
             os.remove(path)
         else:
