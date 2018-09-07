@@ -1482,7 +1482,12 @@ class StcGen:
                     self.stc._stc.download(labserverfilename)
                 elif filename in self.stc._stc.files():           
                     # It's in the root directory.         
-                    self.stc._stc.download(filename)                    
+                    self.stc._stc.download(filename)
+                else:
+                    # Unable to find the DB file.
+                    errmsg = "Unable to locate the results DB file on the lab server. Available files are: " + str(self.stc._stc.files())
+                    logging.error(errmsg)
+                    raise Exception(errmsg)                
 
                 # Now move the DB file from the temporary directory and put it into 
                 # the specified directory (path).
