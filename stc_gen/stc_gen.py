@@ -17,6 +17,10 @@
 #
 # Modification History
 # Version  Modified
+# 1.3.3    12/12/2018 by Matthew Jefferson
+#           -Fixed an issue with IPv6 modifiers.
+#           -Numerous small changes and fixes.
+#
 # 1.3.2    09/11/2018 by Matthew Jefferson
 #           -Made some small modifications to the results processing code. The changes
 #            should result in some massive speed improvements over the original code.
@@ -275,6 +279,10 @@ class StcGen:
         # objects have been created. This is necessary to prevent race conditions.
         self.relations = {}
 
+        # This dictionary keeps track of modifiers. We need to delay creation of modifiers until
+        # after all relations have been resolved. This prevents a race condition involving bound IPv6 streamblocks.
+        self.modifiers = {}
+
         # This dictionary keeps track of all objects that we have created. 
         # The key is the object name so multiple objects with the same name is a problem.
         self.objects = {}
@@ -365,6 +373,8 @@ class StcGen:
                 # in order to prevent any race conditions.
                 self.__resolveRelations()
 
+                self.__addModifiers()
+
         # Now deal with the Tests section of the input file.
         if "Tests" in inputdict.keys():
             # NOTE: The order of keys for a JSON file is NOT maintain when it gets 
@@ -389,6 +399,7 @@ class StcGen:
         # Reset the configuration.
         self.stc.perform("ResetConfig", config="system1")        
         self.relations = {}
+        self.modifiers = {}
         self.objects = {}
         self.testsdict = {}
 
@@ -2815,7 +2826,22 @@ class StcGen:
                 elif objecttype.lower() == "emulateddevice" or objecttype.lower() == "device" or objecttype.lower() == "router":
                     object = self.createDevice(parent, key, objectattributes)                    
                 elif re.search("modifier", objecttype, flags=re.I):
-                    object = self.createModifier(parent, objecttype, objectattributes)
+                    # Delay the creation of modifiers until after all relations have been resolved. This will
+                    # prevent a race condition for IPv6 streamblocks.
+                    #object = self.createModifier(parent, objecttype, objectattributes)
+
+                    # Concatenate the streamblock and modifier names. This will help ensure a unique key.
+                    modifiername = parent + "." + key
+                    
+                    if modifiername in self.modifiers.keys():
+                        self.__lprint("WARNING: Duplicate modifier name. The modifier '" + modifiername + "' already exists. Skipping...")
+                    else:
+
+                        self.modifiers[modifiername] = {}
+
+                        self.modifiers[modifiername]["parent"] = parent
+                        self.modifiers[modifiername]["type"] = objecttype
+                        self.modifiers[modifiername]["attributes"] = objectattributes
                 else:
 
                     if re.search("routerconfig$", objecttype, flags=re.I) or re.search("hostconfig$", objecttype, flags=re.I) or re.search("blockconfig$", objecttype, flags=re.I):
@@ -2914,6 +2940,10 @@ class StcGen:
         # attribute references an object's name (or list of object names).
         # This method processes all of the references found during the configuration process.
 
+        # Keep track of all streamblocks that require an update.
+        # Bound streamblocks need to be updated after changing bindings.
+        streamblockupdaterequired = {}
+
         for object in self.relations.keys():
             for attribute in self.relations[object].keys():
                 value = self.relations[object][attribute]
@@ -2925,7 +2955,10 @@ class StcGen:
                 
                 # Remove the "Relation:" tag from the attribute.
                 attribute = re.sub("Relation:", "", attribute, flags=re.I)
-       
+
+                if attribute.lower() == "srcbinding" or attribute.lower() == "dstbinding":
+                    streamblockupdaterequired[object] = True
+           
                 # value can be either a string or a list.
                 objectlist = []
                 for objectname in value:    
@@ -2935,7 +2968,7 @@ class StcGen:
                     match = re.search("\..+", objectname)
 
                     if match:
-                        # Strip off the decendant notation. We'll add it back after.
+                        # Strip off the descendant notation. We'll add it back after.
                         objectnameonly = objectname[:match.start()]
                     else:
                         objectnameonly = objectname
@@ -2957,11 +2990,35 @@ class StcGen:
                  
                 # We should have a list of objects now.
                 if len(objectlist) > 0:
-                    self.__config(object, attribute, " ".join(objectlist))
+                    self.__config(object, attribute, " ".join(objectlist))                            
+
+        for streamblock in streamblockupdaterequired.keys():
+            self.stc.perform("StreamBlockUpdate", StreamBlock=streamblock)
 
         # Reset the relations dictionary.
         self.relations = {}
         return 
+
+    #==============================================================================
+    def __addModifiers(self):
+        # If an attribute has the keyword "Relation:", it means the value of the 
+        # attribute references an object's name (or list of object names).
+        # This method processes all of the references found during the configuration process.
+
+        for modifiername in self.modifiers.keys():
+
+            parent     = self.modifiers[modifiername]["parent"]
+            objecttype = self.modifiers[modifiername]["type"]
+            attributes = self.modifiers[modifiername]["attributes"]
+
+            object = self.createModifier(parent, objecttype, attributes)
+
+            self.objects[modifiername] = object          
+
+        # Reset the modifiers dictionary.
+        self.modifiers = {}
+        return         
+
 
     #==============================================================================
     def __purgeObjects(self):
