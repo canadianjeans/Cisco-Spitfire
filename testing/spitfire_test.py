@@ -4,7 +4,7 @@ import pdb
 
 
 sys.path.append('Z:/Projects/SET/Cisco - Spitfire/stc_gen')
-sys.path.append('C:/Program Files (x86)/Spirent Communications/Spirent TestCenter 4.81/Spirent TestCenter Application/API/Python')
+sys.path.append('C:/Program Files (x86)/Spirent Communications/Spirent TestCenter 4.91/Spirent TestCenter Application/API/Python')
 sys.path.append('../stc_gen')
 import stc_gen
 
@@ -18,12 +18,12 @@ print("Initializing...")
 #stcgen = stc_gen.StcGen(userest=False, labserverip="192.168.8.138", existingsession="kill")
 
 #stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.8.134", existingsession="kill", cleanuponexit=False, verbose=True)
-stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.8.134", existingsession="join", cleanuponexit=False, verbose=True)
+stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.255.189", existingsession="join", cleanuponexit=False, verbose=True)
 #stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.8.190", existingsession="join", cleanuponexit=False, verbose=True)
     
 #print("Loading the configuration...")
 #stcgen.loadJson("base.json")
-#stcgen.loadJson("existing.json")
+stcgen.loadJson("ipv6tosmodifier_simple.json")
 
 
 
@@ -43,7 +43,7 @@ stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.8.134", existingsessi
 
 #stcgen.saveConfiguration("test.tcc")
 
-stcgen.connectAndApply()
+#stcgen.connectAndApply()
 
 #stcgen.waitForLinkUp()
 

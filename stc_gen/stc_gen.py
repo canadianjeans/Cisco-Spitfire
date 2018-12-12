@@ -17,6 +17,10 @@
 #
 # Modification History
 # Version  Modified
+# 1.3.2    09/11/2018 by Matthew Jefferson
+#           -Made some small modifications to the results processing code. The changes
+#            should result in some massive speed improvements over the original code.
+#
 # 1.3.1    09/06/2018 by Matthew Jefferson
 #           -Using a new internal download mechanism. This should improve the speed
 #            of downloading DB files when there is a large number of them.
@@ -172,8 +176,11 @@ class StcGen:
         self.cleanuponexit = cleanuponexit
         self.labserverip = labserverip
 
-        # Construct the log path. The default location is in /tmp.            
-        defaultlogpath = "/tmp/StcGen_logs"
+        # Construct the log path. The default location is in /tmp.    
+        if sys.platform == "win32":
+            defaultlogpath = "./StcGen_logs"
+        else:
+            defaultlogpath = "/tmp/StcGen_logs"
 
         now = datetime.datetime.now()
         tempdir = now.strftime("%Y-%m-%d-%H-%M-%S")
@@ -208,9 +215,8 @@ class StcGen:
         else:
             self.loglevel = logging.INFO
 
-        logging.basicConfig(filename=self.logfile, filemode="w", level=self.loglevel)
-        # Add timestamps to each log message.
-        logging.basicConfig(format="%(asctime)s %(message)s")
+        logging.basicConfig(filename=self.logfile, filemode="w", level=self.loglevel, format="%(asctime)s %(message)s")
+
         # The logger is now ready.        
 
         #print("DEBUG: Using PPRINT")
@@ -227,6 +233,7 @@ class StcGen:
         if not username:
             username = getpass.getuser()
                 
+        self.usingrestapi = False
         if userest:
             logging.info("Using the Python ReST adapter")
             from stcrestclient import stcpythonrest
@@ -236,6 +243,8 @@ class StcGen:
         
             # This is the REST-only method for connecting to the server.
             self.stc.new_session(labserverip, session_name=sessionname, user_name=username, existing_session=existingsession)
+
+            self.usingrestapi = True
 
         else:            
             logging.info("Using the native Python API")
@@ -258,7 +267,7 @@ class StcGen:
                                                              CreateNewTestSession=True)    
 
                 # This instructs the Lab Server to terminate the session when the last client disconnects.
-                self.stc.perform("TerminateBll", TerminateType="ON_LAST_DISCONNECT")
+                self.stc.perform("TerminateBll", TerminateType="ON_LAST_DISCONNECT")                
 
         logging.info("Spirent TestCenter Version: " + self.stc.get("system1", "Version"))
         
@@ -522,7 +531,7 @@ class StcGen:
         resultmodes   = parametersdict.get("ResultModes",   ResultModes)
         deleteresults = parametersdict.get("DeleteResults", DeleteResults)
 
-        deleteresults = ast.literal_eval(deleteresults)
+        deleteresults = ast.literal_eval(str(deleteresults))
 
         # Create a timestamp for the result databases.
         now = datetime.datetime.now()
@@ -1472,22 +1481,27 @@ class StcGen:
 
                 os.chdir(temppath)
 
-                # NOTE: We are no longer using this command because it becomes VERY slow when 
-                # there are a large number of DB files to download.
-                # Download all files from the Lab Server into the temporary directory.
-                #self.stc.perform("cssynchronizefiles")
 
-                if labserverfilename in self.stc._stc.files():                    
-                    # The DB file is in the subdirectory.
-                    self.stc._stc.download(labserverfilename)
-                elif filename in self.stc._stc.files():           
-                    # It's in the root directory.         
-                    self.stc._stc.download(filename)
+                if self.usingrestapi:
+                    # The native API doesn't support downloading a single file.
+                    if labserverfilename in self.stc._stc.files():                    
+                        # The DB file is in the subdirectory.
+                        self.stc._stc.download(labserverfilename)
+                    elif filename in self.stc._stc.files():           
+                        # It's in the root directory.         
+                        self.stc._stc.download(filename)
+                    else:
+                        # Unable to find the DB file.
+                        errmsg = "Unable to locate the results DB file '" + filename + "' on the lab server. Available files are: " + str(self.stc._stc.files())
+                        logging.error(errmsg)
+                        raise Exception(errmsg)                
                 else:
-                    # Unable to find the DB file.
-                    errmsg = "Unable to locate the results DB file on the lab server. Available files are: " + str(self.stc._stc.files())
-                    logging.error(errmsg)
-                    raise Exception(errmsg)                
+                    # NOTE: This command becomes VERY slow when there are a large number of DB files to download.
+                    # Download all files from the Lab Server into the temporary directory.
+                    # The native API doesn't support downloading single files.
+                    self.stc.perform("cssynchronizefiles")
+
+
 
                 # Now move the DB file from the temporary directory and put it into 
                 # the specified directory (path).
@@ -3210,6 +3224,7 @@ class StcGen:
 
         # Delete the table if it already exists. We need to create it every time, just in case additional
         # data has been added to the database.
+        db.execute("DROP TABLE IF EXISTS TxRxEotStreamCustomTempResults")
         db.execute("DROP TABLE IF EXISTS TxRxEotStreamCustomResults")
         
         # Construct a list of data-mining columns. 
@@ -3279,12 +3294,24 @@ class StcGen:
                     AND \
                       Rx.DataSetId = " + str(datasetid) + "\
                     AND \
-                      Tx.StreamId = Rx.Comp32 \
-                    WHERE \
-                      Tx.DataSetId = " + str(datasetid)
+                      Tx.StreamId = Rx.Comp32"   
 
         # This command will create the table.
         db.execute(query)
+
+        # At this point, the TxRxEotStreamCustomTempResults table may have extra Tx rows for other dataset IDs.
+        
+        # The delete command doesn't seem to work.
+        #db.execute("DELETE FROM TxRxEotStreamCustomResults WHERE DataSetId != " + str(datasetid))
+
+        # Create the final table that will contain the results for the specified datasetid.
+        db.execute("CREATE TABLE TxRxEotStreamCustomResults AS SELECT * FROM TxRxEotStreamCustomTempResults WHERE DataSetId = " + str(datasetid))
+
+        # Clean up the temporary tables that we created to save space. You can comment out these lines if you want to debug issues.        
+        db.execute("DROP TABLE IF EXISTS RxEotStreamCustomResults")
+        db.execute("DROP TABLE IF EXISTS RxEotFlowCountPerStreamResults")
+        db.execute("DROP TABLE IF EXISTS TxRxEotStreamCustomTempResults")
+
         return
 
     #==============================================================================
