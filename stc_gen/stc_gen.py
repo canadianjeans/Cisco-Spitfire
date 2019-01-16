@@ -17,6 +17,14 @@
 #
 # Modification History
 # Version  Modified
+# 1.3.5    01/16/2019 by Matthew Jefferson
+#           -Increased the delay between traffic stopping and retrieving the results
+#            database for the runFixedDurationTest method. This should prevent any
+#            problems with results not being up-to-date.
+#
+# 1.3.4    12/13/2018 by Matthew Jefferson
+#           -Fixed a bug with the Sqlite table creation.
+#
 # 1.3.3    12/12/2018 by Matthew Jefferson
 #           -Fixed an issue with IPv6 modifiers.
 #           -Numerous small changes and fixes.
@@ -665,7 +673,7 @@ class StcGen:
                 self.trafficWaitUntilDone()
 
                 # Give the frames a little time to clear the DUT.
-                time.sleep(1)                
+                time.sleep(3)                
 
                 # Traffic has stopped. Gather results.
                 resultsfilename = self.saveResultsDb(currentfilename)
@@ -3300,7 +3308,7 @@ class StcGen:
                 dataminingcolumn = 1
 
         # Create the TxRxEotStreamCustomResults table. This will simplify and speed up the code.
-        query = "CREATE TABLE TxRxEotStreamCustomResults AS \
+        query = "CREATE TABLE TxRxEotStreamCustomTempResults AS \
             SELECT \
             Tx.DataSetId                                      AS 'DataSetId', \
             Tx.ParentHnd                                      AS 'TxPortHandle', \

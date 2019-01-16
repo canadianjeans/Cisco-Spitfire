@@ -18,12 +18,13 @@ print("Initializing...")
 #stcgen = stc_gen.StcGen(userest=False, labserverip="192.168.8.138", existingsession="kill")
 
 #stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.8.134", existingsession="kill", cleanuponexit=False, verbose=True)
-stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.255.189", existingsession="join", cleanuponexit=False, verbose=True)
+stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.255.189", existingsession="kill", cleanuponexit=False, verbose=True)
 #stcgen = stc_gen.StcGen(userest=True, labserverip="192.168.8.190", existingsession="join", cleanuponexit=False, verbose=True)
     
 #print("Loading the configuration...")
 #stcgen.loadJson("base.json")
-stcgen.loadJson("ipv6tosmodifier_simple.json")
+#stcgen.loadJson("ipv6tosmodifier_simple.json")
+stcgen.loadJson("UCMC-v4v6-hp-lp.json")
 
 
 
@@ -41,7 +42,7 @@ stcgen.loadJson("ipv6tosmodifier_simple.json")
 
 #stcgen.saveResultsDb("second.db")
 
-#stcgen.saveConfiguration("test.tcc")
+stcgen.saveConfiguration("mcv4v6.tcc")
 
 #stcgen.connectAndApply()
 
