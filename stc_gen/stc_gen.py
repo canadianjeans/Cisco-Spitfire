@@ -17,6 +17,10 @@
 #
 # Modification History
 # Version  Modified
+# 1.4.0    03/12/2020 by Matthew Jefferson
+#           -Added the methods "breakLinks", "restoreLinks", "bgpWithdrawRoutes"
+#            and "bgpReadvertiseRouters".
+#
 # 1.3.5    01/16/2019 by Matthew Jefferson
 #           -Increased the delay between traffic stopping and retrieving the results
 #            database for the runFixedDurationTest method. This should prevent any
@@ -1345,7 +1349,76 @@ class StcGen:
             elif stop == False:
                 time.sleep(1)
 
-        return     
+        return  
+
+    #==============================================================================
+    def breakLinks(self, portnamelist=None, waittime=0):
+        """Breaks the specified physical port links. If specified, the links are 
+        restored after the specified wait time.
+
+        Parameters
+        ----------
+        portnamelist : list of str
+            Break the links of these ports. All ports by default.
+
+        waittime: int
+            If specified (seconds), the links will be restored after specified wait time.
+
+        """
+
+        logging.info("Executing breakLinks: " + str(locals()))   
+
+        if not portnamelist:
+            portnamelist = self.stc.get(self.project, "children-port").split()   
+
+        portlist = []
+
+        for portname in portnamelist:
+            handle = self.getObject(portname, objecttype="port")    
+            if handle:
+                portlist.append(handle)
+            else:
+                # Just assume that the portname is actually a port handle.
+                portlist.append(portname)
+
+        result = self.stc.perform("L2TestBreakLink", Port=" ".join(portlist))
+
+        if waittime > 0:
+            # Retore the links after the specified wait time (in seconds).
+            time.sleep(waittime)
+            self.restoreLinks(portnamelist)
+
+        return
+
+    #==============================================================================
+    def restoreLinks(self, portnamelist=None):
+        """Restore the links for the specified ports.
+
+        Parameters
+        ----------
+        portnamelist : list of str
+            Restores the links of these ports. All ports by default.
+
+        """
+
+        logging.info("Executing restoreLinks: " + str(locals()))   
+
+        if not portnamelist:
+            portnamelist = self.stc.get(self.project, "children-port").split()   
+
+        portlist = []
+
+        for portname in portnamelist:
+            handle = self.getObject(portname, objecttype="port")    
+            if handle:
+                portlist.append(handle)
+            else:
+                # Just assume that the portname is actually a port handle.
+                portlist.append(portname)
+
+        result = self.stc.perform("L2TestRestoreLink", Port=" ".join(portlist))
+
+        return
 
     #==============================================================================
     def arpNdSuccess(self):         
@@ -1401,6 +1474,67 @@ class StcGen:
                 raise Exception(errmsg)
 
         return
+
+    #==============================================================================
+    def bgpWithdrawRoutes(self, objectnamelist=None):
+        """Withdraw the BGP routes for the specified objects (ports or devices).
+
+        Parameters
+        ----------
+        objectnamelist: list
+            List of ports/device names to withdraw routes.
+
+        """
+
+        logging.info("Executing bgpWithdrawRoutes: " + str(locals()))   
+
+        if not objectnamelist:
+            objectnamelist = self.stc.get(self.project, "children-emulateddevice").split()   
+
+        objectlist = []
+
+        for name in objectnamelist:
+            handle = self.getObject(name)    
+            if handle:
+                objectlist.append(handle)
+            else:
+                # Just assume that the name is actually an object handle.
+                objectlist.append(name)
+
+        result = self.stc.perform("BgpWithdrawRoute", RouteList=" ".join(objectlist))
+
+        return
+
+    #==============================================================================
+    def bgpReadvertiseRoutes(self, objectnamelist=None):
+        """Readvertise the BGP routes for the specified objects (ports or devices).
+
+        Parameters
+        ----------
+        objectnamelist: list
+            List of ports/device names to withdraw routes.
+
+        """
+
+        logging.info("Executing bgpReadvertiseRoutes: " + str(locals()))   
+
+        if not objectnamelist:
+            objectnamelist = self.stc.get(self.project, "children-emulateddevice").split()   
+
+        objectlist = []
+
+        for name in objectnamelist:
+            handle = self.getObject(name)    
+            if handle:
+                objectlist.append(handle)
+            else:
+                # Just assume that the name is actually an object handle.
+                objectlist.append(name)
+
+        result = self.stc.perform("BgpReadvertiseRoute", RouterList=" ".join(objectlist))
+
+        return        
+
 
     #==============================================================================
     def saveConfiguration(self, filename): 
