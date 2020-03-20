@@ -17,6 +17,9 @@
 #
 # Modification History
 # Version  Modified
+# 1.5.0    03/20/2020 by Matthew Jefferson
+#           -Added support for RFC 2544 testing.
+#
 # 1.4.0    03/12/2020 by Matthew Jefferson
 #           -Added the methods "breakLinks", "restoreLinks", "bgpWithdrawRoutes"
 #            and "bgpReadvertiseRouters".
@@ -233,9 +236,7 @@ class StcGen:
 
         logging.basicConfig(filename=self.logfile, filemode="w", level=self.loglevel, format="%(asctime)s %(message)s")
 
-        # The logger is now ready.        
-
-        #print("DEBUG: Using PPRINT")
+        # The logger is now ready.            
         #self.pp = pprint.PrettyPrinter(indent=2)
 
         logging.info("Executing __init__: " + str(arguments))
@@ -418,7 +419,7 @@ class StcGen:
         return
 
     #==============================================================================
-    def runAllTests(self):
+    def runAllTests(self, revokeowner=False, waitforlinkup=60, waitforarpndsuccess=60):
         """Run all tests defined by the JSON configuration.
 
         Returns
@@ -430,7 +431,7 @@ class StcGen:
 
         logging.info("Executing runAllTests:")
 
-        self.connectAndApply()   
+        self.connectAndApply(revokeowner=revokeowner, waitforlinkup=waitforlinkup, waitforarpndsuccess=waitforarpndsuccess)   
 
         # An exception will be generated if the links do not come up.
         #self.waitForLinkUp()
@@ -480,11 +481,15 @@ class StcGen:
 
         testtype = str(parametersdict.get("Type", testtype))
 
+        del parametersdict["Type"]
+
         results = {}
         if testtype.lower() == "fixedduration":
             results = self.runFixedDurationTest(testname, parametersdict=parametersdict, **kwargs)
         elif testtype.lower() == "ping":
             results = self.runPingTest(testname, parametersdict=parametersdict, **kwargs)
+        elif testtype.lower() == "rfc2544":
+            results = self.runRfc2544Test(testname, parametersdict=parametersdict, **kwargs)
         else:
             errmsg = "Unknown test type '" + testtype + "' for test '" + testname + "'."
             logging.error(errmsg)
@@ -800,41 +805,206 @@ class StcGen:
                     passed = False
                     print("PING TEST FAILED on " + port + " Gateway=" + gateway + " Device=" + device)
 
-        # result = self.stc.perform("PingVerifyConnectivity", FrameCount=count)
-        # if result["PassFailState"] == "PASSED":
-        #     passed = True
-        # else:
-        #     # The ping test didn't pass. Now we need to figure out which devices failed.            
-        #     # Unfortunately, I don't think we can simply look at a report to figure this
-        #     # out. I think we have to do a ping test for each device.
-        #     passed = False
-        #     devices = self.stc.get("system1.project", "children-emulateddevice").split()
-
-        #     passedlist = []
-        #     failedlist = []
-        #     for device in devices:
-
-        #         result = self.stc.perform("PingVerifyConnectivity", DeviceList=device, FrameCount=count)
-        #         if result["PassFailState"] == "PASSED":
-        #             passedlist.append(device)
-        #             print(device + " = PASSED")
-        #         else:
-        #             print(device + " = FAILED")
-        #             failedlist.append(device)
-        #             # print("FAILED=" + device)
-        #             # self.pp.pprint(self.stc.get(device))
-        #             # for child in self.stc.get(device, "children").split():
-        #             #     print(child)
-        #             #     self.pp.pprint(self.stc.get(child))
-        #             #     print()
-        #         port = self.stc.get(device, "AffiliationPort-Targets")
-        #         self.pp.pprint(self.stc.get(port + ".PingReport"))
-        #         print()
-
         if passed:
             results["Status"] = "PASSED"
                     
         return(results)
+
+    #==============================================================================
+    def runRfc2544Test(self, testname, parametersdict=None, **kwargs): 
+        """Run a fixed duration test.        
+        
+        Parameters
+        ----------
+        testname : str
+            The name of the test. This is only used for reporting purposes!
+        AcceptableFrameLoss: float (0)
+            Maximum percentage of frames that can be lost during an iteration in order for the iteration to be considered successful.
+        Backoff: float (50.0)
+            Rate at which the load decreases after the DUT fails at the current load. Applicable when SearchMode is BINARY or COMBO.
+        DelayStart: int (0)
+            The number of seconds to wait before running the throughput tests. This allows enough time for devices to come up fully.
+        Duration: float (60)
+            The duration of the test. The DurationMode determines the units for this value.
+        DurationMode: str (SECONDS)
+            One of these values: "SECONDS" or "BURSTS".            
+        EnableJitterMeasurement: bool (False)
+            Whether to enable or disable jitter measurements.
+        EnableMaxLatencyThreshold: bool (False)
+            Whether the search algorithm uses the maximum latency per stream to determine the throughput.
+        EnableOutOfSeqThreshold: bool (False)
+            Whether the search algorithm uses the out-of-sequence frame count per stream to determine the throughput.
+        FrameSizeList: list
+            List of frame sizes. A separate test is throughput test is execute for each size.
+        LatencyType: enum (LILO)
+            Latency type for different devices. FIFO, LIFO, LILO.
+        LearningFreqMode: enum (LEARN_ONCE)
+            Learning frequency type. NONE, LEARN_ONCE, LEARN_EVERY_TRIAL, LEARN_EVERY_FRAME_SIZE, LEARN_EVERY_ITERATION.
+        LearningMode: enum (AUTO)
+            Learning mode. AUTO, NONE, L2_LEARNING, L3_LEARNING.
+        LoadUnits: enum (PERCENT_LINE_RATE)
+            Unit of measurement for the load parameter, applied to all ports and streams in the test.
+        MaxLatencyThreshold: float (30)
+            Maximum latency per stream that can be reached during an iteration in order for the iteration to be considered successful.
+        NumOfTrials: int (1)
+            Number of trials.
+        OutOfSeqThreshold: int (0)
+            Maximum out-of-sequence frames per stream that can be received during an iteration in order for the iteration to be considered successful.
+        RateInitial: float (99.0)
+            If SearchMode is set to BINARY, the load rate at the beginning of the test. This attribute is ignored if SearchMode is set to STEP.
+        RateLowerLimit: float (1.0)
+            Lowest transmission rate at which the application will send traffic during any test iteration, as a percentage of the total wire rate.
+        RateStep: float (10.0)
+            If SearchMode is set to STEP, the amount the load increases from iteration to iteration. This attribute is ignored if SearchMode is set to BINARY.
+        RateUpperLimit: float (100.0)
+            Maximum rate at which Spirent TestCenter will send traffic during the test,as a percentage of the total wire rate.
+        Resolution: float (1.0)
+            Finest adjustment possible for the load from iteration to iteration. If the required adjustment to the current load for the next iteration is less than the resolution, the search stops. Applicable when SearchMode is BINARY or COMBO.
+        SaveResults: bool (True)
+            Save the results database files in a Zip file after the test has completed.            
+        SearchMode: enum (BINARY)
+            Mode used to find the throughput rate. BINARY, STEP, COMBO.
+        TrafficList: list
+            A list of Streamblocks to include in the test. All streamblocks are used by default.
+        TrafficVerificationAbortOnFail: bool (True)
+            Test behavior when traffic verification fails.
+        TrafficVerificationFreqMode: enum (NONE)
+            Specifies when to perform traffic verification during the test. NONE, VERIFY_EVERY_TRIAL, VERIFY_EVERY_FRAME_SIZE, VERIFY_EVERY_ITERATION.
+        TrafficVerificationTxFrameCount: int (100)
+            Number of frames to use for traffic verification.
+        TrafficVerificationTxFrameRate: int (1000)
+            Traffic rate in frames per second to use for traffic verification.
+        parametersdict : dict
+            A dictionary of test parameters. Users can use either the parametersdict or
+            keyword arguments. parameterdict settings take precedence over keyword arguments.      
+        
+        Returns
+        -------
+        dict
+            Returns a dictionary containing test status, statistics and results database filename information.
+
+        """ 
+
+        logging.info("Executing runRfc2544Test: " + str(locals()))
+
+        self.__lprint("Starting RFC 2544 Throughput Test...")
+
+        if not self.linksUp(ignoreportswithouttraffic=True):
+            errmsg = "Some port links appear to be down. Aborting test..."
+            logging.error(errmsg)
+            raise Exception(errmsg)              
+
+        self.__lprint("Starting devices...")
+        self.stc.perform("DevicesStartAll")        
+
+        delay = kwargs.get("DelayStart", 0)
+        time.sleep(delay)
+
+        if parametersdict:
+            for key in parametersdict.keys():
+                kwargs[key] = parametersdict[key]
+
+       # Deal with specific arguments.
+        enabledetailedresults = True
+        streamblocks = []
+
+        for key in list(kwargs):
+            if key.lower() == "enabledetailedresultscollection":                
+                enabledetailedresults = kwargs[key]
+                del kwargs[key]
+
+            if key.lower() == "trafficlist":
+                # Only include the specified streamblocks.
+                for item in kwargs[key]:
+                    # Determine if item is a name or handle.
+                    handle = self.getObject(item, objecttype="streamblock")    
+                    if handle:
+                        streamblocks.append(handle)
+                    else:
+                        # Assume item is actually a streamblock handle.
+                        streamblocks.append(item)
+    
+        if len(streamblocks) == 0:
+            # All streamblocks.            
+            for port in self.stc.get("system1.project", "children-port").split():
+                streamblocks += self.stc.get(port, "children-streamblock").split()                
+
+        kwargs["TrafficList"] = streamblocks                
+
+        result = self.stc.perform("Rfc2544SetupThroughputTestCommand", **kwargs)
+
+        configobject = result["benchmarkingtestcaseconfig-Targets"]
+
+        self.stc.config(configobject, EnableDetailedResultsCollection=enabledetailedresults)
+
+        self.stc.apply()
+
+        self.__lprint("Starting sequencer...")
+        self.stc.perform("SequencerStart")
+
+        # Wait for the sequencer to stop.
+        stop = False
+        currentstep = ""
+        while not stop:
+            #self.pp.pprint(self.stc.get("system1.sequencer"))
+
+            state = self.stc.get("system1.sequencer", "State")
+
+            current = self.stc.get("system1.sequencer", "CurrentCommand")
+
+            if current != "" and currentstep != self.stc.get(current, "ProgressCurrentStepName"):
+                currentstep = self.stc.get(current, "ProgressCurrentStepName")
+
+                self.__lprint(currentstep)
+                #print(currentstep)
+
+            if state == "PAUSE" or state == "IDLE" or state == "FINALIZE":
+                stop = True
+            else:
+                time.sleep(1)        
+
+        results = {}      
+        results["Status"] = self.stc.get("system1.sequencer", "TestState")
+
+        self.__lprint("Test complete: " + results["Status"])
+
+        dbfilenames = self.__getRfc2544ResultFiles()
+
+        # First, find the summary DB file.
+        summarydbfilename = None
+        for filename in dbfilenames:
+            if re.search("Summary", filename):
+                summarydbfilename = filename
+                break                      
+
+        results["PerFramesizeResult"] = self.__getRfc2544SummaryResults(summarydbfilename, "Rfc2544ThroughputPerFrameSizeResult")
+        results["PerLoadResult"] = self.__getRfc2544SummaryResults(summarydbfilename, "Rfc2544ThroughputPerLoadResult")
+
+        results["DatabaseArchive"] = ""
+        if kwargs.get("SaveResults", True):            
+            # Zip the result DB files for reference later.
+            # Use the summary DB filename for the name of the Zip.
+            zipfilename = os.path.splitext(summarydbfilename)[0]
+            zipfilename += ".zip"
+            zipfilename = os.path.split(zipfilename)[1]
+            zipfilename = os.path.abspath(zipfilename)
+
+            results["DatabaseArchive"] = zipfilename
+
+            self.__lprint("Saving results DB files to " + zipfilename)
+
+            zipfh = zipfile.ZipFile(zipfilename, 'w')
+            for filename in dbfilenames:
+                basefilename = os.path.basename(filename)
+                zipfh.write(filename, arcname=basefilename, compress_type=zipfile.ZIP_DEFLATED)
+            zipfh.close()
+
+        # Delete the original result DB files.
+        for filename in dbfilenames:
+            os.remove(filename)        
+
+        return(results)
+
 
     #==============================================================================
     def trafficStart(self):
@@ -3652,6 +3822,107 @@ class StcGen:
             resultdict[column[0]] = value
 
         return resultdict
+
+    #==============================================================================
+    def __getRfc2544ResultFiles(self):
+        """Retrieve the result database files. They could be local, or stored on the
+        Lab Server, or the ReST API server. All three scenarios require a different
+        process.
+        """
+
+        dbfilenames = []
+
+        if self.labserverip:
+            # If we are using a Lab Server, we need to do a little dance to get the files
+            # from the server to the desired location on the local client.
+            
+            # Do the following in the temporary log directory. This will allow us to clean
+            # up all of the extra files (logs and stuff) when we are done.
+            originalpath = os.path.abspath(os.getcwd())
+            temppath = os.path.abspath(os.path.join(self.logpath, "results"))
+
+            if not os.path.exists(temppath):
+                os.makedirs(temppath)
+
+            try:
+                os.chdir(temppath)        
+
+                if self.usingrestapi:
+                    # Currently, the Python ReST adapter differs from the native Python API
+                    # when using the CsSynchronizeFiles command. The ReST adapter flattens
+                    # the directory structure and puts all files in the same directory.
+
+                    # Download each result DB file.
+                    for filename in self.stc._stc.files():
+                        if re.match(r"Results/+", filename):
+                            savedfilename, sizeinbytes = self.stc._stc.download(filename)
+                            savedfilename = os.path.abspath(savedfilename)
+                            dbfilenames.append(savedfilename)
+
+                else:
+                    # NOTE: This command becomes VERY slow when there are a large number of DB files to download.
+                    # Download all files from the Lab Server into the temporary directory.
+                    # The native API doesn't support downloading single files.
+                    self.stc.perform("cssynchronizefiles")      
+
+                    for root, dirs, files in os.walk("./Results"):
+                        for name in files:
+                            filename = os.path.abspath(os.path.join(root, name))
+                            dbfilenames.append(filename)
+            except Exception as errmsg:                                        
+                self.__lprint(errmsg)                
+
+            os.chdir(originalpath)
+
+        else:
+            # The files are local to this host.
+            for root, dirs, files in os.walk("./Results"):
+                for name in files:
+                    filename = os.path.abspath(os.path.join(root, name))
+                    dbfilenames.append(filename) 
+
+        return dbfilenames
+
+    #==============================================================================
+    def __getRfc2544SummaryResults(self, dbfilename, tablename):
+        """Process the specified result DB file and return the specified result 
+        table from the RFC2544 summary result database file.
+        """
+        
+        # if os.path.isfile(dbfilename):
+        #     errmsg = "The summary results database file '" + dbfilename + "' could not be located."
+        #     logging.error(errmsg)
+        #     raise Exception(errmsg)
+
+        results = {}
+       
+        try:
+
+            conn = sqlite3.connect(dbfilename)
+            db = conn.cursor()
+
+            query = "SELECT * FROM " + tablename
+            
+            db.execute(query)
+            
+            i = 1
+            description = db.description
+            for row in db.fetchall():
+                rowdict = self.__getResultsAsDict(row, description)
+
+                id = rowdict["Id"]
+                results[id] = {}
+
+                for key in rowdict.keys():
+                    results[id][key] = rowdict[key]                
+
+        except Exception as errmsg:                                                    
+            self.__lprint(errmsg)
+            raise Exception(errmsg)
+
+        conn.close()
+
+        return results
 
     #==============================================================================
     def __rmtree(self, path):
